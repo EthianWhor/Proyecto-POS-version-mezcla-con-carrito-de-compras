@@ -1,0 +1,339 @@
+
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: #f4f7fb;
+  color: #333;
+}
+
+
+h1 {
+  text-align: center;
+  background: linear-gradient(135deg, #6c8cff, #8ec5fc);
+  color: white;
+  margin: 0;
+  padding: 20px;
+  border-bottom: 4px solid #5a74e0;
+}
+
+h1 small {
+  display: block;
+  margin-top: 5px;
+  font-size: 14px;
+}
+
+
+.nav {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  padding: 15px;
+  background: white;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+.nav button {
+  background: #6c8cff;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  transition: 0.2s;
+}
+
+.nav button:hover {
+  background: #5a74e0;
+}
+
+/* Layout */
+.view {
+  padding: 20px;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.grid-2--tight {
+  gap: 10px;
+}
+
+@media (max-width: 980px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panel {
+  background: white;
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.06);
+}
+
+.panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.panel__header h3 {
+  margin: 0;
+  padding: 0;
+  background: none;
+  color: #333;
+  width: auto;
+}
+
+.muted {
+  color: #6b7280;
+}
+
+.hidden { display: none; }
+
+/* Buttons */
+.btn-secondary {
+  background: #e7ecff !important;
+  color: #2b3a7a !important;
+}
+
+.btn-danger {
+  background: #ff4d4d !important;
+  color: white !important;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.actions button {
+  background: #6c8cff;
+  color: white;
+  border: none;
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+
+.message {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f0f6ff;
+  border: 1px solid #dbe7ff;
+}
+
+
+/* Inputs */
+input, select {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #cfd8ea;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-row {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.form-row label {
+  font-size: 13px;
+  color: #374151;
+}
+
+
+#saleProducts,
+#productsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+  padding: 10px;
+}
+
+.product {
+  width: 200px;
+  background: white;
+  border-radius: 12px;
+  padding: 15px;
+  text-align: center;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.08);
+  transition: transform 0.2s;
+}
+
+.product:hover { transform: none; }
+
+.product::before {
+  content:"";
+  display:block;
+  height:120px;
+  background: linear-gradient(135deg, #edf2ff, #f6f9ff);
+  border: 1px dashed #cfd8ea;
+  border-radius:8px;
+  margin-bottom:10px;
+}
+
+
+.product[data-id="1"]::before { background:url("Imagenes/cuaderno.png") center/cover; border:none; }
+.product[data-id="2"]::before { background:url("Imagenes/lapicero.jpg") center/cover; border:none; }
+.product[data-id="3"]::before { background:url("Imagenes/resaltador.jpg") center/cover; border:none; }
+.product[data-id="4"]::before { background:url("Imagenes/regla.jpg") center/cover; border:none; }
+.product[data-id="5"]::before { background:url("Imagenes/borrador.jpg") center/cover; border:none; }
+.product[data-id="6"]::before { background:url("Imagenes/lapiz.png") center/cover; border:none; }
+.product[data-id="7"]::before { background:url("Imagenes/marcador.png") center/cover; border:none; }
+.product[data-id="8"]::before { background:url("Imagenes/tijeras.jpg") center/cover; border:none; }
+.product[data-id="9"]::before { background:url("Imagenes/pegastick.jpg") center/cover; border:none; }
+.product[data-id="10"]::before { background:url("Imagenes/carpeta.jpg") center/cover; border:none; }
+.product[data-id="11"]::before { background:url("Imagenes/calculadora.jpg") center/cover; border:none; }
+.product[data-id="12"]::before { background:url("Imagenes/postit.jpg") center/cover; border:none; }
+
+.product button {
+  margin-top: 10px;
+  background: #6c8cff;
+  color: white;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+/* Sale cart */
+#saleCart {
+  padding: 6px 0;
+}
+
+.cart-item {
+  background: white;
+  border-radius: 10px;
+  padding: 12px;
+  margin: 10px auto;
+  width: 280px;
+  box-shadow: 0 3px 6px rgba(0,0,0,0.05);
+  text-align: center;
+}
+.cart-item::before {
+  content: "";
+  display: block;
+  height: 100px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background-size: cover;
+  background-position: center;
+}
+
+
+.cart-item[data-id="1"]::before { background-image: url("Imagenes/cuaderno.png"); }
+.cart-item[data-id="2"]::before { background-image: url("Imagenes/lapicero.jpg"); }
+.cart-item[data-id="3"]::before { background-image: url("Imagenes/resaltador.jpg"); }
+.cart-item[data-id="4"]::before { background-image: url("Imagenes/regla.jpg"); }
+.cart-item[data-id="5"]::before { background-image: url("Imagenes/borrador.jpg"); }
+.cart-item[data-id="6"]::before { background-image: url("Imagenes/lapiz.png"); }
+.cart-item[data-id="7"]::before { background-image: url("Imagenes/marcador.png"); }
+.cart-item[data-id="8"]::before { background-image: url("Imagenes/tijeras.jpg"); }
+.cart-item[data-id="9"]::before { background-image: url("Imagenes/pegastick.jpg"); }
+.cart-item[data-id="10"]::before { background-image: url("Imagenes/carpeta.jpg"); }
+.cart-item[data-id="11"]::before { background-image: url("Imagenes/calculadora.jpg"); }
+.cart-item[data-id="12"]::before { background-image: url("Imagenes/postit.jpg"); }
+
+
+.cart-item button {
+  margin: 5px;
+  background: #ff7a7a;
+  color: white;
+  border: none;
+  padding: 5px 8px;
+  border-radius: 6px;
+}
+
+.totals {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eef2ff;
+}
+
+.totals__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.pay {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #eef2ff;
+}
+
+/* Sales list */
+.list {
+  display: grid;
+  gap: 12px;
+}
+
+.list-item {
+  background: white;
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.06);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.list-item .meta {
+  display: grid;
+  gap: 2px;
+}
+
+/* Invoice */
+.invoice-actions {
+  padding: 12px 20px 0;
+}
+
+.invoice {
+  background: white;
+  border-radius: 12px;
+  padding: 18px;
+  margin: 10px 20px 30px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.06);
+}
+
+.invoice h2, .invoice h3 {
+  margin: 0 0 10px;
+  padding: 0;
+  background: none;
+  color: #111827;
+  width: auto;
+  text-align: left;
+}
+
+.invoice table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+
+.invoice th, .invoice td {
+  text-align: left;
+  padding: 10px;
+  border-bottom: 1px solid #eef2ff;
+}
+
+.invoice th {
+  background: #f3f6ff;
+}
+
