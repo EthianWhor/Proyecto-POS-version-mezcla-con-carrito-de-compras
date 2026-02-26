@@ -1,12 +1,5 @@
-// POS Papel y Luna - MVP 1 (Vanilla JS)
-// - Nueva venta: buscar/agregar productos, modificar cantidades, total, cobro (Efectivo/Nequi/Debe), confirmar y guardar
-// - Productos: CRUD con validaciones básicas, inventario opcional
-// - Ventas: historial + factura
-// Persistencia: localStorage
 
-// =====================
-// Utils
-// =====================
+
 function formatCOP(n) {
   const num = Number(n || 0);
   return num.toLocaleString("es-CO", {
@@ -53,7 +46,7 @@ function makeProductCode(id) {
 }
 
 function makeSaleId() {
-  // Ej: V-20260219-132045
+
   const d = new Date();
   const y = d.getFullYear();
   const m = pad(d.getMonth() + 1, 2);
@@ -64,9 +57,6 @@ function makeSaleId() {
   return `V-${y}${m}${day}-${hh}${mm}${ss}`;
 }
 
-// =====================
-// Storage
-// =====================
 const Storage = {
   KEYS: {
     PRODUCTS: "pos_papel_y_luna_products_v1",
@@ -89,7 +79,7 @@ const Storage = {
 };
 
 function defaultProductsSeed() {
-  // Basado en tu carrito original + campos mínimos del MVP
+
   const base = [
     { id: 1, name: "Cuaderno Profesional", category: "Cuadernos", price: 12500, cost: 8000, trackInventory: true, stock: 20 },
     { id: 2, name: "Lapicero Negro", category: "Escritura", price: 2200, cost: 900, trackInventory: true, stock: 60 },
@@ -111,14 +101,11 @@ function defaultProductsSeed() {
   }));
 }
 
-// =====================
-// App State
-// =====================
 const state = {
   products: [],
   sales: [],
   currentSale: {
-    items: [], // { productId, qty }
+    items: [], 
     payment: { method: "Efectivo", cashReceived: 0, change: 0 },
   },
   ui: {
@@ -135,7 +122,6 @@ function loadData() {
   const seed = defaultProductsSeed();
   const rawProducts = Array.isArray(storedProducts) && storedProducts.length ? storedProducts : seed;
 
-  // Normaliza por si hay datos viejos en localStorage
   state.products = rawProducts.map((p, idx) => {
     const id = toNumber(p.id, idx + 1);
     const price = nonNegative(p.price);
@@ -155,7 +141,6 @@ function loadData() {
     };
   });
 
-  // Si no había productos, se guardan los iniciales
   Storage.save(Storage.KEYS.PRODUCTS, state.products);
 
   state.sales = Array.isArray(storedSales) ? storedSales : [];
@@ -169,25 +154,18 @@ function persistSales() {
   Storage.save(Storage.KEYS.SALES, state.sales);
 }
 
-// =====================
-// DOM
-// =====================
-// Nav
 const goSaleBtn = document.querySelector("#goSaleBtn");
 const goSalesBtn = document.querySelector("#goSalesBtn");
 const goProductsBtn = document.querySelector("#goProductsBtn");
 
-// Views
 const saleView = document.querySelector("#saleView");
 const saleConfirmationView = document.querySelector("#saleConfirmationView");
 const salesView = document.querySelector("#salesView");
 const invoiceView = document.querySelector("#invoiceView");
 const productsView = document.querySelector("#productsView");
 
-// Header
 const headerSaleTotalSpan = document.querySelector("#headerSaleTotal");
 
-// Sale UI
 const saleSearchInput = document.querySelector("#saleSearchInput");
 const saleProductsDiv = document.querySelector("#saleProducts");
 const saleCartDiv = document.querySelector("#saleCart");
@@ -203,21 +181,17 @@ const confirmSaleBtn = document.querySelector("#confirmSaleBtn");
 const newSaleBtn = document.querySelector("#newSaleBtn");
 const saleMessageP = document.querySelector("#saleMessage");
 
-// Confirmation
 const confirmationText = document.querySelector("#confirmationText");
 const confirmationNewSaleBtn = document.querySelector("#confirmationNewSaleBtn");
 const confirmationInvoiceBtn = document.querySelector("#confirmationInvoiceBtn");
 const confirmationHistoryBtn = document.querySelector("#confirmationHistoryBtn");
 
-// Sales history
 const emptySalesP = document.querySelector("#emptySales");
 const salesListDiv = document.querySelector("#salesList");
 
-// Invoice
 const invoiceContainer = document.querySelector("#invoiceContainer");
 const invoiceBackBtn = document.querySelector("#invoiceBackBtn");
 
-// Products CRUD
 const productSearchInput = document.querySelector("#productSearchInput");
 const productsListDiv = document.querySelector("#productsList");
 const productFormTitle = document.querySelector("#productFormTitle");
@@ -233,9 +207,6 @@ const pStock = document.querySelector("#pStock");
 const resetProductBtn = document.querySelector("#resetProductBtn");
 const productMessageP = document.querySelector("#productMessage");
 
-// =====================
-// Router / Views
-// =====================
 const allViews = [saleView, saleConfirmationView, salesView, invoiceView, productsView];
 
 function showView(viewEl) {
@@ -271,9 +242,6 @@ function goToProducts() {
   renderProductsView();
 }
 
-// =====================
-// Sale (Nueva venta)
-// =====================
 function findProductById(id) {
   return state.products.find((p) => p.id === id);
 }
@@ -292,7 +260,6 @@ function setSaleMessage(text, kind = "info") {
   saleMessageP.textContent = text;
   saleMessageP.classList.remove("hidden");
 
-  // look & feel simple
   saleMessageP.style.background = kind === "error" ? "#fff1f2" : "#f0f6ff";
   saleMessageP.style.borderColor = kind === "error" ? "#fecdd3" : "#dbe7ff";
 }
@@ -451,7 +418,6 @@ function renderSaleCart() {
     saleCartDiv.appendChild(div);
   }
 
-  // Totales
   saleTotalSpan.textContent = formatCOP(total);
   headerSaleTotalSpan.textContent = formatCOP(total);
   updateCashChange();
@@ -475,7 +441,7 @@ function validateInventoryForSale() {
 }
 
 function applyInventoryDiscountForSale() {
-  // Descuenta stock al cerrar venta (RN-03)
+
   for (const item of state.currentSale.items) {
     const p = findProductById(item.productId);
     if (!p || !p.trackInventory) continue;
@@ -524,7 +490,6 @@ function confirmSale() {
     return;
   }
 
-  // Inventario
   const inventoryError = validateInventoryForSale();
   if (inventoryError) {
     setSaleMessage(inventoryError, "error");
@@ -544,25 +509,18 @@ function confirmSale() {
 
   const sale = buildSaleSnapshot();
 
-  // Guardar venta
   state.sales.unshift(sale);
   persistSales();
 
-  // Actualizar inventario
   applyInventoryDiscountForSale();
 
-  // UI: confirmación
   state.ui.lastSaleId = sale.id;
   confirmationText.textContent = `Venta ${sale.id} registrada. Total: ${formatCOP(sale.total)} • Pago: ${sale.payment.method}.`;
   goToConfirmation();
 
-  // Reset para siguiente venta
   startNewSale();
 }
 
-// =====================
-// Sales history + Invoice
-// =====================
 function renderSalesHistory() {
   salesListDiv.innerHTML = "";
   emptySalesP.style.display = state.sales.length === 0 ? "block" : "none";
@@ -666,9 +624,6 @@ function buildInvoiceHTML(sale) {
   `;
 }
 
-// =====================
-// Products (CRUD)
-// =====================
 function setProductMessage(text, kind = "info") {
   productMessageP.textContent = text;
   productMessageP.classList.remove("hidden");
@@ -770,7 +725,6 @@ function deleteProduct(productId) {
   state.products = state.products.filter((x) => x.id !== productId);
   persistProducts();
 
-  // Si el producto estaba en venta en curso, lo removemos
   state.currentSale.items = state.currentSale.items.filter((i) => i.productId !== productId);
 
   setProductMessage("Producto eliminado.");
@@ -799,7 +753,6 @@ function upsertProductFromForm() {
     stock: nonNegative(pStock.value),
   };
 
-  // Si no hay inventario, stock no aplica (pero lo guardamos igual)
   if (!draft.trackInventory) {
     draft.stock = 0;
   }
@@ -835,7 +788,6 @@ function upsertProductFromForm() {
     persistProducts();
     setProductMessage("Producto actualizado.");
 
-    // Recalcular venta en curso (si usa el producto)
     renderSaleCart();
   }
 
@@ -848,9 +800,6 @@ function toggleStockRow() {
   stockRow.classList.toggle("hidden", !pTrack.checked);
 }
 
-// =====================
-// Events
-// =====================
 goSaleBtn.addEventListener("click", goToSale);
 goSalesBtn.addEventListener("click", goToSales);
 goProductsBtn.addEventListener("click", goToProducts);
@@ -922,9 +871,6 @@ productForm.addEventListener("submit", (e) => {
   upsertProductFromForm();
 });
 
-// =====================
-// Init
-// =====================
 loadData();
 resetPayment();
 renderSale();
