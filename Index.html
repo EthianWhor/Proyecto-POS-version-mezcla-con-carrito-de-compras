@@ -1,178 +1,120 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>POS Papel y Luna - MVP</title>
-  <link rel="stylesheet" href="styles.css" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Papel &amp; Luna — POS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
-  <h1>
-    Papelería Papel y Luna
-    <small>Venta actual: <span id="headerSaleTotal">$0</span></small>
-  </h1>
 
-  <nav class="nav">
-    <button id="goSaleBtn" type="button">Nueva venta</button>
-    <button id="goSalesBtn" type="button">Ventas</button>
-    <button id="goProductsBtn" type="button">Productos</button>
-  </nav>
-
-  <!-- NUEVA VENTA -->
-  <section id="saleView" class="view">
-    <h2>Nueva venta</h2>
-
-    <div class="grid-2">
-      <!-- Catálogo / búsqueda -->
-      <div class="panel">
-        <div class="panel__header">
-          <h3>Catálogo</h3>
-          <input id="saleSearchInput" type="text" placeholder="Buscar productos..." />
-        </div>
-        <div id="saleProducts"></div>
-      </div>
-
-      <!-- Venta en curso -->
-      <div class="panel">
-        <div class="panel__header">
-          <h3>Venta en curso</h3>
-          <button id="clearSaleBtn" class="btn-danger" type="button">Vaciar</button>
-        </div>
-
-        <p id="emptySale" class="muted">No hay productos agregados.</p>
-        <div id="saleCart"></div>
-
-        <div class="totals">
-          <div class="totals__row">
-            <span>Total</span>
-            <strong id="saleTotal">$0</strong>
-          </div>
-        </div>
-
-        <div class="pay">
-          <h4>Cobro</h4>
-          <div class="form-row">
-            <label for="paymentMethod">Método</label>
-            <select id="paymentMethod">
-              <option value="Efectivo">Efectivo</option>
-              <option value="Nequi">Nequi</option>
-              <option value="Debe">Debe</option>
-            </select>
-          </div>
-
-          <div id="cashFields">
-            <div class="form-row">
-              <label for="cashReceived">Recibido (efectivo)</label>
-              <input id="cashReceived" type="number" min="0" step="100" placeholder="0" />
-            </div>
-            <div class="totals__row">
-              <span>Cambio</span>
-              <strong id="cashChange">$0</strong>
-            </div>
-          </div>
-
-          <div class="actions">
-            <button id="confirmSaleBtn" type="button">Confirmar venta</button>
-            <button id="newSaleBtn" type="button" class="btn-secondary">Nueva venta</button>
-          </div>
-          <p id="saleMessage" class="message hidden"></p>
-        </div>
-      </div>
+<!-- PANTALLA DE SELECCIÓN DE PERFIL -->
+<div id="role-screen">
+  <div id="role-screen-inner">
+    <div id="role-screen-brand">
+      <div id="role-screen-logo">Papel <span>&</span> Luna</div>
+      <div id="role-screen-tagline">Sistema Punto de Venta</div>
     </div>
-  </section>
+    <div id="role-screen-title">¿Con qué perfil deseas ingresar?</div>
+    <div id="role-cards">
 
-  <!-- CONFIRMACIÓN -->
-  <section id="saleConfirmationView" class="view hidden">
-    <h2>Venta confirmada</h2>
-    <div class="panel">
-      <p id="confirmationText"></p>
-      <div class="actions">
-        <button id="confirmationNewSaleBtn" type="button">Nueva venta</button>
-        <button id="confirmationInvoiceBtn" type="button" class="btn-secondary">Ver factura</button>
-        <button id="confirmationHistoryBtn" type="button" class="btn-secondary">Ir a historial</button>
+      <button class="role-card cajero" onclick="enterAs('cajero')">
+        <div class="role-card-icon">🛍️</div>
+        <div class="role-card-name">Comprar</div>
+        <div class="role-card-desc">Inicia una venta directamente. Rápido y sin complicaciones.</div>
+        <ul class="role-card-perms">
+          <li class="perm-yes">Nueva venta</li>
+          <li class="perm-yes">Historial de ventas</li>
+          <li class="perm-no">Gestión de productos</li>
+          <li class="perm-no">Configuración general</li>
+        </ul>
+        <div class="role-card-cta">Comenzar →</div>
+      </button>
+
+      <button class="role-card" onclick="promptAdminPassword()">
+        <div class="role-card-icon">🔑</div>
+        <div class="role-card-name">Administrador</div>
+        <div class="role-card-desc">Acceso completo al sistema. Gestiona ventas, historial, catálogo de productos y configuración.</div>
+        <ul class="role-card-perms">
+          <li class="perm-yes">Nueva venta</li>
+          <li class="perm-yes">Historial de ventas</li>
+          <li class="perm-yes">Gestión de productos</li>
+          <li class="perm-yes">Configuración general</li>
+        </ul>
+        <div class="role-card-cta">Ingresar con contraseña →</div>
+      </button>
+
+    </div>
+  </div>
+</div>
+
+<!-- APP PRINCIPAL -->
+<div id="app" class="hidden">
+
+  <div id="topbar">
+    <button id="sidebar-toggle" onclick="toggleSidebar()" aria-label="Menú">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="logo">Papel <span>&</span> Luna</div>
+    <div class="spacer"></div>
+    <div id="topbar-role-badge">
+      <span id="topbar-role-icon"></span>
+      <span id="topbar-role-label"></span>
+    </div>
+    <button id="topbar-exit-btn" onclick="exitToRoleScreen()">⇠ Cambiar perfil</button>
+  </div>
+
+  <div id="shell">
+
+    <nav id="sidebar">
+      <div class="nav-section-label">Ventas</div>
+      <div class="nav-item active" data-view="pos" onclick="navigate('pos')">
+        <span class="nav-icon">🛒</span>
+        <span class="nav-text">Nueva Venta</span>
       </div>
-    </div>
-  </section>
-
-  <!-- HISTORIAL DE VENTAS -->
-  <section id="salesView" class="view hidden">
-    <h2>Historial de ventas</h2>
-    <p id="emptySales" class="muted">Aún no hay ventas cerradas.</p>
-    <div id="salesList" class="list"></div>
-  </section>
-
-  <!-- FACTURA -->
-  <section id="invoiceView" class="view hidden">
-    <div class="invoice-actions">
-      <button id="invoiceBackBtn" type="button" class="btn-secondary">Volver</button>
-    </div>
-    <div id="invoiceContainer" class="invoice"></div>
-  </section>
-
-  <!-- PRODUCTOS (CRUD) -->
-  <section id="productsView" class="view hidden">
-    <h2>Productos</h2>
-    <div class="grid-2">
-      <div class="panel">
-        <div class="panel__header">
-          <h3>Listado</h3>
-          <input id="productSearchInput" type="text" placeholder="Buscar..." />
+      <div class="nav-item" data-view="historial" onclick="navigate('historial')">
+        <span class="nav-icon">📋</span>
+        <span class="nav-text">Historial</span>
+      </div>
+      <div class="nav-section-label admin-only">Catálogo</div>
+      <div class="nav-item admin-only" data-view="productos" onclick="navigate('productos')">
+        <span class="nav-icon">📦</span>
+        <span class="nav-text">Productos</span>
+      </div>
+      <div class="nav-spacer"></div>
+      <div id="sidebar-profile">
+        <span id="sidebar-profile-icon"></span>
+        <div class="sidebar-profile-info hidden-when-collapsed">
+          <div id="sidebar-profile-name"></div>
+          <div id="sidebar-profile-desc"></div>
         </div>
-        <div id="productsList"></div>
       </div>
+    </nav>
 
-      <div class="panel">
-        <div class="panel__header">
-          <h3 id="productFormTitle">Crear producto</h3>
-          <button id="cancelEditBtn" type="button" class="btn-secondary hidden">Cancelar</button>
-        </div>
+    <main id="main">
+      <div id="view-pos"       class="view"></div>
+      <div id="view-historial" class="view hidden"></div>
+      <div id="view-productos" class="view hidden"></div>
+    </main>
 
-        <form id="productForm">
-          <div class="form-row">
-            <label for="pName">Nombre *</label>
-            <input id="pName" type="text" required />
-          </div>
+  </div>
+</div>
 
-          <div class="form-row">
-            <label for="pCategory">Categoría *</label>
-            <input id="pCategory" type="text" required />
-          </div>
-
-          <div class="grid-2 grid-2--tight">
-            <div class="form-row">
-              <label for="pPrice">Precio de venta *</label>
-              <input id="pPrice" type="number" min="0" step="100" required />
-            </div>
-            <div class="form-row">
-              <label for="pCost">Costo (compra) *</label>
-              <input id="pCost" type="number" min="0" step="100" required />
-            </div>
-          </div>
-
-          <div class="form-row">
-            <label>
-              <input id="pTrack" type="checkbox" />
-              Seguimiento de inventario
-            </label>
-          </div>
-
-          <div class="form-row" id="stockRow">
-            <label for="pStock">Stock</label>
-            <input id="pStock" type="number" min="0" step="1" value="0" />
-          </div>
-
-          <p class="muted" id="pCodeHint">Código interno: se asigna automáticamente.</p>
-
-          <div class="actions">
-            <button id="saveProductBtn" type="submit">Guardar</button>
-            <button id="resetProductBtn" type="button" class="btn-secondary">Limpiar</button>
-          </div>
-          <p id="productMessage" class="message hidden"></p>
-        </form>
-      </div>
+<div id="modal-backdrop" class="modal-backdrop hidden">
+  <div class="modal" id="modal-box">
+    <div class="modal-header">
+      <h2 class="modal-title" id="modal-title"></h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
-  </section>
+    <div class="modal-body"   id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
 
-  <script src="app.js"></script>
+<div id="toast-container"></div>
+<script src="app.js"></script>
 </body>
 </html>

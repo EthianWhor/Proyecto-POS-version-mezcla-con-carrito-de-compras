@@ -1,931 +1,1073 @@
-// POS Papel y Luna - MVP 1 (Vanilla JS)
-// - Nueva venta: buscar/agregar productos, modificar cantidades, total, cobro (Efectivo/Nequi/Debe), confirmar y guardar
-// - Productos: CRUD con validaciones básicas, inventario opcional
-// - Ventas: historial + factura
-// Persistencia: localStorage
+/* ═══════════════════════════════════════════════════════════
+   ESTADO GLOBAL
+═══════════════════════════════════════════════════════════ */
+const STORE_KEY_PRODUCTS = 'pl_products';
+const STORE_KEY_SALES    = 'pl_sales';
 
-// =====================
-// Utils
-// =====================
-function formatCOP(n) {
-  const num = Number(n || 0);
-  return num.toLocaleString("es-CO", {
-    style: "currency",
-    currency: "COP",
-    maximumFractionDigits: 0,
-  });
-}
-
-function pad(num, size) {
-  return String(num).padStart(size, "0");
-}
-
-function nowISO() {
-  return new Date().toISOString();
-}
-
-function formatDateTime(iso) {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString("es-CO", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
-
-function toNumber(value, fallback = 0) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function nonNegative(value) {
-  return Math.max(0, toNumber(value, 0));
-}
-
-function makeProductCode(id) {
-  return `P${pad(id, 4)}`;
-}
-
-function makeSaleId() {
-  // Ej: V-20260219-132045
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = pad(d.getMonth() + 1, 2);
-  const day = pad(d.getDate(), 2);
-  const hh = pad(d.getHours(), 2);
-  const mm = pad(d.getMinutes(), 2);
-  const ss = pad(d.getSeconds(), 2);
-  return `V-${y}${m}${day}-${hh}${mm}${ss}`;
-}
-
-// =====================
-// Storage
-// =====================
-const Storage = {
-  KEYS: {
-    PRODUCTS: "pos_papel_y_luna_products_v1",
-    SALES: "pos_papel_y_luna_sales_v1",
-  },
-
-  load(key, fallback) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return fallback;
-      return JSON.parse(raw);
-    } catch {
-      return fallback;
-    }
-  },
-
-  save(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
-  },
-};
-
-function defaultProductsSeed() {
-  // Basado en tu carrito original + campos mínimos del MVP
-  const base = [
-    { id: 1, name: "Cuaderno Profesional", category: "Cuadernos", price: 12500, cost: 8000, trackInventory: true, stock: 20 },
-    { id: 2, name: "Lapicero Negro", category: "Escritura", price: 2200, cost: 900, trackInventory: true, stock: 60 },
-    { id: 3, name: "Resaltador Amarillo", category: "Escritura", price: 4500, cost: 2000, trackInventory: true, stock: 40 },
-    { id: 4, name: "Regla 30 cm", category: "Útiles", price: 3000, cost: 1400, trackInventory: true, stock: 25 },
-    { id: 5, name: "Borrador", category: "Útiles", price: 1000, cost: 400, trackInventory: true, stock: 80 },
-    { id: 6, name: "Lápiz", category: "Útiles", price: 1500, cost: 600, trackInventory: true, stock: 100 },
-    { id: 7, name: "Marcador Permanente", category: "Útiles", price: 3000, cost: 1400, trackInventory: true, stock: 30 },
-    { id: 8, name: "Tijeras", category: "Útiles", price: 5000, cost: 2600, trackInventory: true, stock: 15 },
-    { id: 9, name: "Pegastick", category: "Útiles", price: 6000, cost: 3200, trackInventory: true, stock: 18 },
-    { id: 10, name: "Carpeta", category: "Cuadernos", price: 7000, cost: 3500, trackInventory: true, stock: 22 },
-    { id: 11, name: "Calculadora", category: "Útiles", price: 149000, cost: 110000, trackInventory: true, stock: 6 },
-    { id: 12, name: "Post-it", category: "Útiles", price: 15000, cost: 9000, trackInventory: true, stock: 12 },
-  ];
-
-  return base.map((p) => ({
-    ...p,
-    code: makeProductCode(p.id),
-  }));
-}
-
-// =====================
-// App State
-// =====================
-const state = {
+let state = {
   products: [],
   sales: [],
-  currentSale: {
-    items: [], // { productId, qty }
-    payment: { method: "Efectivo", cashReceived: 0, change: 0 },
+  currentSale: null,
+  currentView: 'pos',
+  role: null,           // 'admin' | 'cajero'  — null hasta elegir
+  searchQuery: '',
+  historialFilter: { date: '', method: '', q: '' },
+};
+
+const ROLES = {
+  admin: {
+    label: 'Administrador',
+    icon:  '🔑',
+    desc:  'Acceso completo al sistema',
+    color: 'var(--accent)',
   },
-  ui: {
-    currentView: "saleView",
-    editingProductId: null,
-    lastSaleId: null,
+  cajero: {
+    label: 'Comprar',
+    icon:  '🛍️',
+    desc:  'Ventas e historial',
+    color: 'var(--blue)',
   },
 };
 
+const ADMIN_PASSWORD = '1234'; // Cambia esta contraseña
+
+/* ─── Productos semilla ─────────────────────────────────── */
+const SEED_PRODUCTS = [
+  { id:'p001', name:'Cuaderno Universitario 100h', category:'Cuadernos',  price:8500,  cost:5200,  code:'CU-100', barcode:'', trackInventory:true,  stock:24,  unit:'unidad' },
+  { id:'p002', name:'Esfero Azul Kilométrico',     category:'Lapiceros',  price:1200,  cost:600,   code:'ESF-AZ', barcode:'', trackInventory:true,  stock:150, unit:'unidad' },
+  { id:'p003', name:'Resma Papel Carta 500h',      category:'Papel',      price:16000, cost:11500, code:'RES-C',  barcode:'', trackInventory:true,  stock:30,  unit:'unidad' },
+  { id:'p004', name:'Marcador Permanente Negro',   category:'Marcadores', price:2800,  cost:1400,  code:'MRK-N',  barcode:'', trackInventory:true,  stock:60,  unit:'unidad' },
+  { id:'p005', name:'Cinta de Enmascarar 1"',      category:'Cintas',     price:3200,  cost:1800,  code:'CIN-1',  barcode:'', trackInventory:false, stock:0,   unit:'unidad' },
+  { id:'p006', name:'Lápiz HB Mirado',             category:'Lápices',    price:700,   cost:300,   code:'LAP-HB', barcode:'', trackInventory:true,  stock:200, unit:'unidad' },
+];
+
+/* ═══════════════════════════════════════════════════════════
+   PERSISTENCIA
+═══════════════════════════════════════════════════════════ */
 function loadData() {
-  const storedProducts = Storage.load(Storage.KEYS.PRODUCTS, null);
-  const storedSales = Storage.load(Storage.KEYS.SALES, []);
-
-  const seed = defaultProductsSeed();
-  const rawProducts = Array.isArray(storedProducts) && storedProducts.length ? storedProducts : seed;
-
-  // Normaliza por si hay datos viejos en localStorage
-  state.products = rawProducts.map((p, idx) => {
-    const id = toNumber(p.id, idx + 1);
-    const price = nonNegative(p.price);
-    const cost = nonNegative(p.cost);
-    const trackInventory = Boolean(p.trackInventory);
-    const stock = nonNegative(p.stock);
-
-    return {
-      id,
-      code: p.code || makeProductCode(id),
-      name: String(p.name || "Producto").trim(),
-      category: String(p.category || "General").trim(),
-      price,
-      cost,
-      trackInventory,
-      stock: trackInventory ? stock : 0,
-    };
-  });
-
-  // Si no había productos, se guardan los iniciales
-  Storage.save(Storage.KEYS.PRODUCTS, state.products);
-
-  state.sales = Array.isArray(storedSales) ? storedSales : [];
-}
-
-function persistProducts() {
-  Storage.save(Storage.KEYS.PRODUCTS, state.products);
-}
-
-function persistSales() {
-  Storage.save(Storage.KEYS.SALES, state.sales);
-}
-
-// =====================
-// DOM
-// =====================
-// Nav
-const goSaleBtn = document.querySelector("#goSaleBtn");
-const goSalesBtn = document.querySelector("#goSalesBtn");
-const goProductsBtn = document.querySelector("#goProductsBtn");
-
-// Views
-const saleView = document.querySelector("#saleView");
-const saleConfirmationView = document.querySelector("#saleConfirmationView");
-const salesView = document.querySelector("#salesView");
-const invoiceView = document.querySelector("#invoiceView");
-const productsView = document.querySelector("#productsView");
-
-// Header
-const headerSaleTotalSpan = document.querySelector("#headerSaleTotal");
-
-// Sale UI
-const saleSearchInput = document.querySelector("#saleSearchInput");
-const saleProductsDiv = document.querySelector("#saleProducts");
-const saleCartDiv = document.querySelector("#saleCart");
-const emptySaleP = document.querySelector("#emptySale");
-const saleTotalSpan = document.querySelector("#saleTotal");
-const clearSaleBtn = document.querySelector("#clearSaleBtn");
-
-const paymentMethodSelect = document.querySelector("#paymentMethod");
-const cashFieldsDiv = document.querySelector("#cashFields");
-const cashReceivedInput = document.querySelector("#cashReceived");
-const cashChangeSpan = document.querySelector("#cashChange");
-const confirmSaleBtn = document.querySelector("#confirmSaleBtn");
-const newSaleBtn = document.querySelector("#newSaleBtn");
-const saleMessageP = document.querySelector("#saleMessage");
-
-// Confirmation
-const confirmationText = document.querySelector("#confirmationText");
-const confirmationNewSaleBtn = document.querySelector("#confirmationNewSaleBtn");
-const confirmationInvoiceBtn = document.querySelector("#confirmationInvoiceBtn");
-const confirmationHistoryBtn = document.querySelector("#confirmationHistoryBtn");
-
-// Sales history
-const emptySalesP = document.querySelector("#emptySales");
-const salesListDiv = document.querySelector("#salesList");
-
-// Invoice
-const invoiceContainer = document.querySelector("#invoiceContainer");
-const invoiceBackBtn = document.querySelector("#invoiceBackBtn");
-
-// Products CRUD
-const productSearchInput = document.querySelector("#productSearchInput");
-const productsListDiv = document.querySelector("#productsList");
-const productFormTitle = document.querySelector("#productFormTitle");
-const cancelEditBtn = document.querySelector("#cancelEditBtn");
-const productForm = document.querySelector("#productForm");
-const pName = document.querySelector("#pName");
-const pCategory = document.querySelector("#pCategory");
-const pPrice = document.querySelector("#pPrice");
-const pCost = document.querySelector("#pCost");
-const pTrack = document.querySelector("#pTrack");
-const stockRow = document.querySelector("#stockRow");
-const pStock = document.querySelector("#pStock");
-const resetProductBtn = document.querySelector("#resetProductBtn");
-const productMessageP = document.querySelector("#productMessage");
-
-// =====================
-// Router / Views
-// =====================
-const allViews = [saleView, saleConfirmationView, salesView, invoiceView, productsView];
-
-function showView(viewEl) {
-  allViews.forEach((v) => v.classList.add("hidden"));
-  viewEl.classList.remove("hidden");
-}
-
-function goToSale() {
-  state.ui.currentView = "saleView";
-  showView(saleView);
-  renderSale();
-}
-
-function goToConfirmation() {
-  state.ui.currentView = "saleConfirmationView";
-  showView(saleConfirmationView);
-}
-
-function goToSales() {
-  state.ui.currentView = "salesView";
-  showView(salesView);
-  renderSalesHistory();
-}
-
-function goToInvoice() {
-  state.ui.currentView = "invoiceView";
-  showView(invoiceView);
-}
-
-function goToProducts() {
-  state.ui.currentView = "productsView";
-  showView(productsView);
-  renderProductsView();
-}
-
-// =====================
-// Sale (Nueva venta)
-// =====================
-function findProductById(id) {
-  return state.products.find((p) => p.id === id);
-}
-
-function getSaleTotal() {
-  let total = 0;
-  for (const item of state.currentSale.items) {
-    const p = findProductById(item.productId);
-    if (!p) continue;
-    total += p.price * item.qty;
+  try {
+    const p = localStorage.getItem(STORE_KEY_PRODUCTS);
+    const s = localStorage.getItem(STORE_KEY_SALES);
+    state.products = p ? JSON.parse(p) : [...SEED_PRODUCTS];
+    state.sales    = s ? JSON.parse(s) : [];
+  } catch(e) {
+    state.products = [...SEED_PRODUCTS];
+    state.sales    = [];
   }
-  return total;
 }
+function saveProducts() { localStorage.setItem(STORE_KEY_PRODUCTS, JSON.stringify(state.products)); }
+function saveSales()    { localStorage.setItem(STORE_KEY_SALES,    JSON.stringify(state.sales)); }
 
-function setSaleMessage(text, kind = "info") {
-  saleMessageP.textContent = text;
-  saleMessageP.classList.remove("hidden");
+/* ═══════════════════════════════════════════════════════════
+   UTILIDADES
+═══════════════════════════════════════════════════════════ */
+function genId(prefix) { return prefix + '-' + Date.now().toString(36).toUpperCase(); }
+function nextSaleNum()  { return String(state.sales.length + 1).padStart(5, '0'); }
+function fmt(n)         { return '$ ' + Number(n || 0).toLocaleString('es-CO'); }
+function fmtDate(iso)   { return new Date(iso).toLocaleString('es-CO', { dateStyle:'short', timeStyle:'short' }); }
 
-  // look & feel simple
-  saleMessageP.style.background = kind === "error" ? "#fff1f2" : "#f0f6ff";
-  saleMessageP.style.borderColor = kind === "error" ? "#fecdd3" : "#dbe7ff";
-}
+/* ═══════════════════════════════════════════════════════════
+   PANTALLA DE SELECCIÓN DE PERFIL
+═══════════════════════════════════════════════════════════ */
+function promptAdminPassword() {
+  // Inject inline password modal into the role screen
+  const existing = document.getElementById('pwd-overlay');
+  if (existing) existing.remove();
 
-function clearSaleMessage() {
-  saleMessageP.textContent = "";
-  saleMessageP.classList.add("hidden");
-}
-
-function addToSale(productId) {
-  const p = findProductById(productId);
-  if (!p) return;
-
-  const item = state.currentSale.items.find((i) => i.productId === productId);
-  if (item) {
-    item.qty += 1;
-  } else {
-    state.currentSale.items.push({ productId, qty: 1 });
-  }
-  renderSaleCart();
-}
-
-function removeFromSale(productId) {
-  state.currentSale.items = state.currentSale.items.filter((i) => i.productId !== productId);
-  renderSaleCart();
-}
-
-function changeSaleQty(productId, delta) {
-  const item = state.currentSale.items.find((i) => i.productId === productId);
-  if (!item) return;
-
-  const nextQty = item.qty + delta;
-  if (nextQty <= 0) {
-    removeFromSale(productId);
-    return;
-  }
-
-  item.qty = nextQty;
-  renderSaleCart();
-}
-
-function clearSale() {
-  state.currentSale.items = [];
-  renderSaleCart();
-}
-
-function resetPayment() {
-  state.currentSale.payment = { method: "Efectivo", cashReceived: 0, change: 0 };
-  paymentMethodSelect.value = "Efectivo";
-  cashReceivedInput.value = "";
-  updateCashUI();
-}
-
-function startNewSale() {
-  clearSaleMessage();
-  clearSale();
-  resetPayment();
-  saleSearchInput.value = "";
-  renderSaleProducts(state.products);
-}
-
-function updateCashUI() {
-  const method = paymentMethodSelect.value;
-  state.currentSale.payment.method = method;
-
-  if (method === "Efectivo") {
-    cashFieldsDiv.classList.remove("hidden");
-  } else {
-    cashFieldsDiv.classList.add("hidden");
-  }
-  updateCashChange();
-}
-
-function updateCashChange() {
-  const total = getSaleTotal();
-  const method = state.currentSale.payment.method;
-
-  if (method !== "Efectivo") {
-    state.currentSale.payment.cashReceived = 0;
-    state.currentSale.payment.change = 0;
-    cashChangeSpan.textContent = formatCOP(0);
-    headerSaleTotalSpan.textContent = formatCOP(total);
-    saleTotalSpan.textContent = formatCOP(total);
-    return;
-  }
-
-  const received = nonNegative(cashReceivedInput.value);
-  const change = Math.max(0, received - total);
-
-  state.currentSale.payment.cashReceived = received;
-  state.currentSale.payment.change = change;
-
-  cashChangeSpan.textContent = formatCOP(change);
-  headerSaleTotalSpan.textContent = formatCOP(total);
-  saleTotalSpan.textContent = formatCOP(total);
-}
-
-function renderSaleProducts(list) {
-  saleProductsDiv.innerHTML = "";
-
-  list.forEach((p) => {
-    const div = document.createElement("div");
-    div.className = "product";
-    div.setAttribute("data-id", String(p.id));
-
-    const stockInfo = p.trackInventory ? `<p><small>Stock: <strong>${p.stock}</strong></small></p>` : `<p><small>Sin inventario</small></p>`;
-
-    div.innerHTML = `
-      <h3>${p.name}</h3>
-      <p><small>${p.code} • ${p.category}</small></p>
-      <p>Precio: <strong>${formatCOP(p.price)}</strong></p>
-      ${stockInfo}
-      <button type="button" data-add="${p.id}">Agregar</button>
-    `;
-
-    div.querySelector("[data-add]").addEventListener("click", () => {
-      addToSale(p.id);
-    });
-
-    saleProductsDiv.appendChild(div);
-  });
-}
-
-function renderSaleCart() {
-  clearSaleMessage();
-  saleCartDiv.innerHTML = "";
-
-  const total = getSaleTotal();
-  emptySaleP.style.display = state.currentSale.items.length === 0 ? "block" : "none";
-
-  for (const item of state.currentSale.items) {
-    const p = findProductById(item.productId);
-    if (!p) continue;
-    const subtotal = p.price * item.qty;
-
-    const div = document.createElement("div");
-    div.className = "cart-item";
-    div.setAttribute("data-id", String(p.id));
-
-    div.innerHTML = `
-      <strong>${p.name}</strong>
-      <p><small>${p.code} • ${p.category}</small></p>
-      <p>Cantidad: <strong>${item.qty}</strong></p>
-      <p>Subtotal: <strong>${formatCOP(subtotal)}</strong></p>
-      <div>
-        <button type="button" data-dec="${p.id}">-</button>
-        <button type="button" data-inc="${p.id}">+</button>
-        <button type="button" data-remove="${p.id}">Eliminar</button>
+  const overlay = document.createElement('div');
+  overlay.id = 'pwd-overlay';
+  overlay.innerHTML = `
+    <div id="pwd-box">
+      <div id="pwd-title">Acceso Administrador</div>
+      <div id="pwd-sub">Ingresa la contraseña para continuar</div>
+      <input type="password" id="pwd-input" class="form-control" placeholder="Contraseña"
+        onkeydown="if(event.key==='Enter')checkAdminPassword(); if(event.key==='Escape')closePwdOverlay();"
+        autocomplete="off"/>
+      <div id="pwd-error" style="display:none">Contraseña incorrecta. Intenta de nuevo.</div>
+      <div id="pwd-actions">
+        <button class="btn btn-ghost" onclick="closePwdOverlay()">Cancelar</button>
+        <button class="btn btn-primary" onclick="checkAdminPassword()">Ingresar</button>
       </div>
-    `;
+    </div>
+  `;
+  overlay.onclick = e => { if (e.target === overlay) closePwdOverlay(); };
+  document.getElementById('role-screen').appendChild(overlay);
+  setTimeout(() => document.getElementById('pwd-input')?.focus(), 80);
+}
 
-    div.querySelector("[data-inc]").addEventListener("click", () => changeSaleQty(p.id, +1));
-    div.querySelector("[data-dec]").addEventListener("click", () => changeSaleQty(p.id, -1));
-    div.querySelector("[data-remove]").addEventListener("click", () => removeFromSale(p.id));
-
-    saleCartDiv.appendChild(div);
+function checkAdminPassword() {
+  const input = document.getElementById('pwd-input');
+  if (!input) return;
+  if (input.value === ADMIN_PASSWORD) {
+    closePwdOverlay();
+    enterAs('admin');
+  } else {
+    const err = document.getElementById('pwd-error');
+    err.style.display = 'block';
+    input.value = '';
+    input.classList.add('pwd-shake');
+    setTimeout(() => input.classList.remove('pwd-shake'), 400);
+    input.focus();
   }
-
-  // Totales
-  saleTotalSpan.textContent = formatCOP(total);
-  headerSaleTotalSpan.textContent = formatCOP(total);
-  updateCashChange();
 }
 
-function renderSale() {
-  renderSaleProducts(state.products);
-  renderSaleCart();
+function closePwdOverlay() {
+  document.getElementById('pwd-overlay')?.remove();
 }
 
-function validateInventoryForSale() {
-  for (const item of state.currentSale.items) {
-    const p = findProductById(item.productId);
-    if (!p) continue;
-    if (!p.trackInventory) continue;
-    if (p.stock < item.qty) {
-      return `No hay stock suficiente para “${p.name}”. Stock: ${p.stock}, requerido: ${item.qty}.`;
-    }
+function enterAs(role) {
+  state.role = role;
+
+  // Ocultar pantalla de selección, mostrar app
+  document.getElementById('role-screen').style.display = 'none';
+  document.getElementById('app').classList.remove('hidden');
+
+  // Clases en body para CSS
+  document.body.classList.remove('role-admin', 'role-cajero');
+  document.body.classList.add('role-' + role);
+
+  // Topbar: badge de rol
+  const r = ROLES[role];
+  document.getElementById('topbar-role-icon').textContent  = r.icon;
+  document.getElementById('topbar-role-label').textContent = r.label;
+
+  // Sidebar: perfil al fondo
+  document.getElementById('sidebar-profile-icon').textContent = r.icon;
+  document.getElementById('sidebar-profile-name').textContent = r.label;
+  document.getElementById('sidebar-profile-desc').textContent = r.desc;
+
+  // Iniciar la app
+  initNewSale();
+  navigate('pos');
+  toast('Bienvenido, ' + r.label, 'success');
+}
+
+function exitToRoleScreen() {
+  // Confirmar si hay venta en curso con ítems
+  if (state.currentSale && state.currentSale.items.length > 0) {
+    openModal(
+      'Cambiar perfil',
+      `<div class="confirm-icon">⚠️</div>
+       <div class="confirm-msg">Tienes una venta en curso. ¿Salir de todas formas?</div>
+       <div class="confirm-sub">Se perderá la venta no guardada.</div>`,
+      `<button class="btn btn-ghost"  onclick="closeModal()">Cancelar</button>
+       <button class="btn btn-danger" onclick="confirmExit()">Salir</button>`
+    );
+  } else {
+    confirmExit();
   }
-  return null;
 }
 
-function applyInventoryDiscountForSale() {
-  // Descuenta stock al cerrar venta (RN-03)
-  for (const item of state.currentSale.items) {
-    const p = findProductById(item.productId);
-    if (!p || !p.trackInventory) continue;
-    p.stock = Math.max(0, p.stock - item.qty);
+function confirmExit() {
+  closeModal();
+  state.currentSale = null;
+  state.role = null;
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('role-screen').style.display = 'flex';
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SIDEBAR — colapsable a iconos
+═══════════════════════════════════════════════════════════ */
+function toggleSidebar() {
+  document.body.classList.toggle('sidebar-expanded');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════════════════ */
+function toast(msg, type = 'success') {
+  const icons = { success:'✔', error:'✖', info:'ℹ' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span>${icons[type]||'✔'}</span> ${msg}`;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MODAL
+═══════════════════════════════════════════════════════════ */
+function openModal(title, body, footer, large = false) {
+  document.getElementById('modal-title').innerHTML  = title;
+  document.getElementById('modal-body').innerHTML   = body;
+  document.getElementById('modal-footer').innerHTML = footer;
+  document.getElementById('modal-box').className    = large ? 'modal modal-lg' : 'modal';
+  document.getElementById('modal-backdrop').classList.remove('hidden');
+}
+function closeModal() {
+  document.getElementById('modal-backdrop').classList.add('hidden');
+}
+
+/* ═══════════════════════════════════════════════════════════
+   NAVEGACIÓN
+═══════════════════════════════════════════════════════════ */
+function navigate(view) {
+  if (view === 'productos' && state.role === 'cajero') {
+    toast('Sin acceso. Solo disponible para Administrador.', 'error');
+    return;
   }
-  persistProducts();
+  state.currentView = view;
+  document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('view-' + view).classList.remove('hidden');
+  const ni = document.querySelector(`.nav-item[data-view="${view}"]`);
+  if (ni) ni.classList.add('active');
+  // Colapsar sidebar al navegar
+  document.body.classList.remove('sidebar-expanded');
+  renderView(view);
 }
 
-function buildSaleSnapshot() {
-  const itemsSnapshot = state.currentSale.items.map((item) => {
-    const p = findProductById(item.productId);
-    const price = p ? p.price : 0;
-    return {
-      productId: item.productId,
-      code: p ? p.code : "—",
-      name: p ? p.name : "Producto eliminado",
-      category: p ? p.category : "—",
-      price,
-      qty: item.qty,
-      subtotal: price * item.qty,
-    };
-  });
+function renderView(view) {
+  if (view === 'pos')       renderPOS();
+  if (view === 'historial') renderHistorial();
+  if (view === 'productos') renderProductos();
+}
 
-  const total = itemsSnapshot.reduce((acc, it) => acc + it.subtotal, 0);
-
-  return {
-    id: makeSaleId(),
-    createdAt: nowISO(),
-    closedAt: nowISO(),
-    status: "cerrada",
-    items: itemsSnapshot,
-    total,
-    payment: {
-      method: state.currentSale.payment.method,
-      cashReceived: state.currentSale.payment.method === "Efectivo" ? state.currentSale.payment.cashReceived : 0,
-      change: state.currentSale.payment.method === "Efectivo" ? state.currentSale.payment.change : 0,
-    },
+/* ═══════════════════════════════════════════════════════════
+   VISTA POS — Nueva Venta
+═══════════════════════════════════════════════════════════ */
+function initNewSale() {
+  state.currentSale = {
+    id:        genId('VNT'),
+    num:       nextSaleNum(),
+    createdAt: new Date().toISOString(),
+    items:     [],
+    method:    null,
+    client:    '',
+    status:    'open',
   };
 }
 
-function confirmSale() {
-  clearSaleMessage();
-
-  if (state.currentSale.items.length === 0) {
-    setSaleMessage("No puedes cerrar una venta sin productos.", "error");
-    return;
-  }
-
-  // Inventario
-  const inventoryError = validateInventoryForSale();
-  if (inventoryError) {
-    setSaleMessage(inventoryError, "error");
-    return;
-  }
-
-  const total = getSaleTotal();
-  const method = state.currentSale.payment.method;
-
-  if (method === "Efectivo") {
-    const received = nonNegative(cashReceivedInput.value);
-    if (received < total) {
-      setSaleMessage(`Efectivo insuficiente. Total: ${formatCOP(total)}. Recibido: ${formatCOP(received)}.`, "error");
-      return;
-    }
-  }
-
-  const sale = buildSaleSnapshot();
-
-  // Guardar venta
-  state.sales.unshift(sale);
-  persistSales();
-
-  // Actualizar inventario
-  applyInventoryDiscountForSale();
-
-  // UI: confirmación
-  state.ui.lastSaleId = sale.id;
-  confirmationText.textContent = `Venta ${sale.id} registrada. Total: ${formatCOP(sale.total)} • Pago: ${sale.payment.method}.`;
-  goToConfirmation();
-
-  // Reset para siguiente venta
-  startNewSale();
+function calcTotal(items) {
+  return items.reduce((sum, i) => sum + i.price * i.qty, 0);
 }
 
-// =====================
-// Sales history + Invoice
-// =====================
-function renderSalesHistory() {
-  salesListDiv.innerHTML = "";
-  emptySalesP.style.display = state.sales.length === 0 ? "block" : "none";
+function renderPOS() {
+  if (!state.currentSale) initNewSale();
+  const sale  = state.currentSale;
+  const total = calcTotal(sale.items);
+  const count = sale.items.reduce((s, i) => s + i.qty, 0);
 
-  state.sales.forEach((sale) => {
-    const div = document.createElement("div");
-    div.className = "list-item";
+  document.getElementById('view-pos').innerHTML = `
+    <div id="pos-layout">
+      <div id="pos-left">
 
-    div.innerHTML = `
-      <div class="meta">
-        <strong>${sale.id}</strong>
-        <span class="muted">${formatDateTime(sale.closedAt)} • ${sale.payment.method}</span>
-        <span>Total: <strong>${formatCOP(sale.total)}</strong></span>
+        <div class="page-header">
+          <div>
+            <div class="page-title">Nueva Venta</div>
+            <div class="page-subtitle">Venta #${sale.num} · ${fmtDate(sale.createdAt)}</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="discardSale()">✕ Descartar</button>
+        </div>
+
+        <!-- Buscador -->
+        <div class="card">
+          <div class="card-body" style="padding:14px 16px">
+            <div class="search-wrapper">
+              <div class="search-bar" style="max-width:100%">
+                <span class="search-icon">🔍</span>
+                <input type="text" class="form-control" id="pos-search"
+                  placeholder="Buscar producto por nombre o código…"
+                  autocomplete="off"
+                  oninput="onPosSearch(this.value)"
+                  onkeydown="onPosSearchKey(event)"/>
+              </div>
+              <div class="product-search-results" id="pos-search-results" style="display:none"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Catálogo rápido -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Productos</span>
+            <span style="font-size:.78rem;color:var(--ink-soft)">${state.products.length} en catálogo</span>
+          </div>
+          ${state.products.length === 0
+            ? '<div style="padding:40px;text-align:center;color:var(--ink-soft);font-size:.85rem">Sin productos. <a href="#" onclick="navigate(\'productos\')">Crear productos →</a></div>'
+            : `<div class="product-grid">
+                ${state.products.slice(0, 18).map(p => `
+                  <div class="product-card" onclick="addToSale('${p.id}')">
+                    <div class="product-card-img">
+                      ${p.image
+                        ? `<img src="${p.image}" alt="${p.name}"/>`
+                        : `<div class="img-placeholder">
+                             <div class="img-placeholder-icon">📦</div>
+                             <div class="img-placeholder-text">Sin imagen</div>
+                           </div>`}
+                      ${p.trackInventory
+                        ? `<div class="product-card-stock-badge ${p.stock > 0 ? 'in-stock' : 'out-stock'}">
+                             ${p.stock > 0 ? p.stock : 'Agotado'}
+                           </div>`
+                        : ''}
+                    </div>
+                    <div class="product-card-body">
+                      <div class="product-card-name">${p.name}</div>
+                      <div class="product-card-cat">${p.category}</div>
+                      <div class="product-card-price">${fmt(p.price)}</div>
+                    </div>
+                    <button class="product-card-add" onclick="event.stopPropagation();addToSale('${p.id}')">+ Agregar al carrito</button>
+                  </div>
+                `).join('')}
+              </div>`
+          }
+        </div>
+
       </div>
-      <div>
-        <button type="button" data-invoice="${sale.id}" class="btn-secondary">Ver factura</button>
+    </div>
+
+    <!-- FAB -->
+    <button id="cart-fab" onclick="toggleCart()" aria-label="Ver carrito">
+      <span id="cart-fab-icon">🛒</span>
+      <span id="cart-fab-label">Carrito</span>
+      ${count > 0 ? `<span id="cart-fab-badge">${count}</span>` : ''}
+      ${count > 0 ? `<span id="cart-fab-total">${fmt(total)}</span>` : ''}
+    </button>
+
+    <!-- Overlay -->
+    <div id="cart-overlay" onclick="closeCart()"></div>
+
+    <!-- Drawer -->
+    <div id="cart-drawer">
+      <div id="cart-drawer-header">
+        <div>
+          <div class="drawer-title">Papel <span>&</span> Luna</div>
+          <div class="drawer-sub">Venta #${sale.num} · ${count > 0 ? count + ' producto' + (count !== 1 ? 's' : '') : 'carrito vacío'}</div>
+        </div>
+        <div id="cart-drawer-header-actions">
+          ${sale.items.length > 0
+            ? `<button class="btn btn-ghost btn-sm" style="color:rgba(255,255,255,.5);border-color:rgba(255,255,255,.15);font-size:.72rem" onclick="clearSale()">Limpiar</button>`
+            : ''}
+          <button id="cart-close-btn" onclick="closeCart()">✕</button>
+        </div>
       </div>
-    `;
 
-    div.querySelector("[data-invoice]").addEventListener("click", () => {
-      openInvoice(sale.id, { backTo: "sales" });
-    });
+      <div id="cart-drawer-items">
+        ${sale.items.length === 0
+          ? `<div class="empty-state" style="padding:60px 20px">
+              <div class="big-icon">🛒</div>
+              <h3>Carrito vacío</h3>
+              <p>Selecciona productos del catálogo para agregarlos aquí</p>
+             </div>`
+          : sale.items.map((item, i) => `
+              <div class="pos-item pop">
+                <div class="pos-item-thumb">📦</div>
+                <div class="pos-item-info">
+                  <div class="pos-item-name">${item.name}</div>
+                  <div class="pos-item-cat">${item.category}</div>
+                  <div class="pos-item-price">${fmt(item.price)} c/u</div>
+                </div>
+                <div class="pos-item-right">
+                  <div class="pos-item-subtotal">${fmt(item.price * item.qty)}</div>
+                  <div class="qty-ctrl">
+                    <button class="qty-btn" onclick="changeQty(${i}, -1)">−</button>
+                    <span class="qty-val">${item.qty}</span>
+                    <button class="qty-btn" onclick="changeQty(${i},  1)">+</button>
+                  </div>
+                  <button class="pos-item-remove" onclick="removeItem(${i})" title="Eliminar">✕</button>
+                </div>
+              </div>
+            `).join('')}
+      </div>
 
-    salesListDiv.appendChild(div);
-  });
-}
+      <div id="cart-drawer-totals">
+        <div class="total-row"><span>Subtotal</span><span>${fmt(total)}</span></div>
+        <div class="total-row grand"><span>Total</span><span>${fmt(total)}</span></div>
+      </div>
 
-function findSaleById(id) {
-  return state.sales.find((s) => s.id === id);
-}
-
-function openInvoice(saleId, opts = { backTo: "sales" }) {
-  const sale = findSaleById(saleId);
-  if (!sale) {
-    goToSales();
-    return;
-  }
-
-  invoiceBackBtn.dataset.backto = opts.backTo || "sales";
-
-  invoiceContainer.innerHTML = buildInvoiceHTML(sale);
-  goToInvoice();
-}
-
-function buildInvoiceHTML(sale) {
-  const business = {
-    name: "Papelería Papel y Luna",
-    nit: "NIT: 000.000.000-0",
-    address: "Dirección: (pendiente)",
-    phone: "Tel: (pendiente)",
-  };
-
-  const rows = sale.items
-    .map(
-      (it) => `
-        <tr>
-          <td>${it.code}</td>
-          <td>${it.name}</td>
-          <td>${it.qty}</td>
-          <td>${formatCOP(it.price)}</td>
-          <td><strong>${formatCOP(it.subtotal)}</strong></td>
-        </tr>
-      `
-    )
-    .join("");
-
-  const cashInfo =
-    sale.payment.method === "Efectivo"
-      ? `<p><strong>Recibido:</strong> ${formatCOP(sale.payment.cashReceived)} • <strong>Cambio:</strong> ${formatCOP(sale.payment.change)}</p>`
-      : "";
-
-  return `
-    <h2>Factura / Comprobante</h2>
-    <p><strong>${business.name}</strong></p>
-    <p class="muted">${business.nit} • ${business.address} • ${business.phone}</p>
-    <hr />
-    <p><strong>Venta:</strong> ${sale.id}</p>
-    <p><strong>Fecha:</strong> ${formatDateTime(sale.closedAt)}</p>
-    <p><strong>Método de pago:</strong> ${sale.payment.method}</p>
-    ${cashInfo}
-    <table>
-      <thead>
-        <tr>
-          <th>Código</th>
-          <th>Producto</th>
-          <th>Cant.</th>
-          <th>Precio</th>
-          <th>Subtotal</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows}
-      </tbody>
-    </table>
-    <div class="totals" style="margin-top:14px;">
-      <div class="totals__row">
-        <span>Total</span>
-        <strong>${formatCOP(sale.total)}</strong>
+      <div id="cart-drawer-actions">
+        <button class="cart-cobrar-btn"
+          ${sale.items.length === 0 ? 'disabled' : ''}
+          onclick="openCobro()">
+          <span class="cobrar-label">Cobrar ahora</span>
+          <span class="cobrar-total">${fmt(total)}</span>
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="saveSaleOpen()" style="width:100%;justify-content:center">
+          Guardar para después
+        </button>
       </div>
     </div>
   `;
 }
 
-// =====================
-// Products (CRUD)
-// =====================
-function setProductMessage(text, kind = "info") {
-  productMessageP.textContent = text;
-  productMessageP.classList.remove("hidden");
-  productMessageP.style.background = kind === "error" ? "#fff1f2" : "#f0f6ff";
-  productMessageP.style.borderColor = kind === "error" ? "#fecdd3" : "#dbe7ff";
+/* ─── Drawer carrito ─────────────────────────────────────── */
+function toggleCart() {
+  const drawer  = document.getElementById('cart-drawer');
+  const overlay = document.getElementById('cart-overlay');
+  if (!drawer) return;
+  const isOpen = drawer.classList.contains('open');
+  if (isOpen) { closeCart(); }
+  else { drawer.classList.add('open'); overlay.classList.add('visible'); }
 }
-
-function clearProductMessage() {
-  productMessageP.textContent = "";
-  productMessageP.classList.add("hidden");
+function closeCart() {
+  document.getElementById('cart-drawer')?.classList.remove('open');
+  document.getElementById('cart-overlay')?.classList.remove('visible');
 }
-
-function resetProductForm() {
-  state.ui.editingProductId = null;
-  productFormTitle.textContent = "Crear producto";
-  cancelEditBtn.classList.add("hidden");
-
-  pName.value = "";
-  pCategory.value = "";
-  pPrice.value = "";
-  pCost.value = "";
-  pTrack.checked = false;
-  pStock.value = "0";
-  stockRow.classList.add("hidden");
-
-  clearProductMessage();
+function isCartOpen() {
+  return document.getElementById('cart-drawer')?.classList.contains('open') || false;
 }
-
-function getNextProductId() {
-  const maxId = state.products.reduce((acc, p) => Math.max(acc, p.id), 0);
-  return maxId + 1;
-}
-
-function renderProductsView() {
-  clearProductMessage();
-  if (state.ui.editingProductId === null) {
-    resetProductForm();
+function restoreCartState(wasOpen) {
+  if (wasOpen) {
+    document.getElementById('cart-drawer')?.classList.add('open');
+    document.getElementById('cart-overlay')?.classList.add('visible');
   }
-  renderProductsList(state.products);
 }
 
-function renderProductsList(list) {
-  productsListDiv.innerHTML = "";
-
-  list.forEach((p) => {
-    const div = document.createElement("div");
-    div.className = "product";
-    div.setAttribute("data-id", String(p.id));
-
-    const inv = p.trackInventory
-      ? `<p><small>Stock: <strong>${p.stock}</strong></small></p>`
-      : `<p><small>Sin inventario</small></p>`;
-
-    div.innerHTML = `
-      <h3>${p.name}</h3>
-      <p><small>${p.code} • ${p.category}</small></p>
-      <p>Venta: <strong>${formatCOP(p.price)}</strong></p>
-      <p><small>Costo: ${formatCOP(p.cost)}</small></p>
-      ${inv}
-      <div class="actions" style="justify-content:center; margin-top:8px;">
-        <button type="button" data-edit="${p.id}" class="btn-secondary">Editar</button>
-        <button type="button" data-del="${p.id}" class="btn-danger">Eliminar</button>
+/* ─── Búsqueda en POS ────────────────────────────────────── */
+function onPosSearch(q) {
+  state.searchQuery = q;
+  const res = document.getElementById('pos-search-results');
+  if (!q.trim()) { res.style.display = 'none'; return; }
+  const matches = state.products.filter(p =>
+    p.name.toLowerCase().includes(q.toLowerCase()) ||
+    p.code.toLowerCase().includes(q.toLowerCase())
+  ).slice(0, 8);
+  if (!matches.length) {
+    res.style.display = 'block';
+    res.innerHTML = '<div style="padding:14px;text-align:center;font-size:.82rem;color:var(--ink-soft)">Sin resultados</div>';
+    return;
+  }
+  res.style.display = 'block';
+  res.innerHTML = matches.map(p => `
+    <div class="search-result-item"
+      onclick="addToSale('${p.id}');
+               document.getElementById('pos-search').value='';
+               document.getElementById('pos-search-results').style.display='none'">
+      <div>
+        <div class="sri-name">${p.name}</div>
+        <div class="sri-cat">${p.category} · ${p.code}</div>
+        ${p.trackInventory ? `<div class="sri-stock">Stock: ${p.stock}</div>` : ''}
       </div>
-    `;
-
-    div.querySelector("[data-edit]").addEventListener("click", () => startEditProduct(p.id));
-    div.querySelector("[data-del]").addEventListener("click", () => deleteProduct(p.id));
-
-    productsListDiv.appendChild(div);
-  });
+      <div class="sri-price">${fmt(p.price)}</div>
+    </div>
+  `).join('');
 }
+function onPosSearchKey(e) {
+  if (e.key === 'Escape') document.getElementById('pos-search-results').style.display = 'none';
+}
+document.addEventListener('click', e => {
+  const res = document.getElementById('pos-search-results');
+  if (res && !e.target.closest('.search-wrapper')) res.style.display = 'none';
+});
 
-function startEditProduct(productId) {
-  const p = findProductById(productId);
+/* ─── Carrito — operaciones ──────────────────────────────── */
+function addToSale(productId) {
+  const p = state.products.find(x => x.id === productId);
   if (!p) return;
 
-  state.ui.editingProductId = p.id;
-  productFormTitle.textContent = `Editar: ${p.name}`;
-  cancelEditBtn.classList.remove("hidden");
-
-  pName.value = p.name;
-  pCategory.value = p.category;
-  pPrice.value = String(p.price);
-  pCost.value = String(p.cost);
-  pTrack.checked = Boolean(p.trackInventory);
-  pStock.value = String(p.stock ?? 0);
-
-  stockRow.classList.toggle("hidden", !pTrack.checked);
-  clearProductMessage();
-}
-
-function deleteProduct(productId) {
-  const p = findProductById(productId);
-  if (!p) return;
-
-  const ok = confirm(`¿Seguro que deseas eliminar el producto “${p.name}”?`);
-  if (!ok) return;
-
-  state.products = state.products.filter((x) => x.id !== productId);
-  persistProducts();
-
-  // Si el producto estaba en venta en curso, lo removemos
-  state.currentSale.items = state.currentSale.items.filter((i) => i.productId !== productId);
-
-  setProductMessage("Producto eliminado.");
-  renderProductsView();
-  renderSale();
-}
-
-function validateProductForm({ name, category, price, cost, trackInventory, stock }) {
-  if (!name.trim()) return "El nombre es obligatorio.";
-  if (!category.trim()) return "La categoría es obligatoria.";
-  if (price < 0) return "El precio de venta no puede ser negativo.";
-  if (cost < 0) return "El costo no puede ser negativo.";
-  if (trackInventory && stock < 0) return "El stock no puede ser negativo.";
-  return null;
-}
-
-function upsertProductFromForm() {
-  clearProductMessage();
-
-  const draft = {
-    name: pName.value,
-    category: pCategory.value,
-    price: nonNegative(pPrice.value),
-    cost: nonNegative(pCost.value),
-    trackInventory: Boolean(pTrack.checked),
-    stock: nonNegative(pStock.value),
-  };
-
-  // Si no hay inventario, stock no aplica (pero lo guardamos igual)
-  if (!draft.trackInventory) {
-    draft.stock = 0;
-  }
-
-  const error = validateProductForm(draft);
-  if (error) {
-    setProductMessage(error, "error");
+  // Bloquear si no tiene stock
+  if (p.trackInventory && p.stock <= 0) {
+    toast('Sin stock disponible para ' + p.name, 'error');
     return;
   }
 
-  if (state.ui.editingProductId === null) {
-    const id = getNextProductId();
-    const product = {
-      id,
-      code: makeProductCode(id),
-      ...draft,
-    };
-    state.products.push(product);
-    persistProducts();
-    setProductMessage(`Producto creado (${product.code}).`);
-  } else {
-    const p = findProductById(state.ui.editingProductId);
-    if (!p) {
-      setProductMessage("No se encontró el producto a editar.", "error");
+  const existing = state.currentSale.items.find(i => i.productId === productId);
+  if (existing) {
+    // No superar el stock disponible
+    if (p.trackInventory && existing.qty >= p.stock) {
+      toast('Stock máximo alcanzado (' + p.stock + ' unidades)', 'error');
       return;
     }
-    p.name = draft.name.trim();
-    p.category = draft.category.trim();
-    p.price = draft.price;
-    p.cost = draft.cost;
-    p.trackInventory = draft.trackInventory;
-    p.stock = draft.stock;
-    persistProducts();
-    setProductMessage("Producto actualizado.");
-
-    // Recalcular venta en curso (si usa el producto)
-    renderSaleCart();
-  }
-
-  resetProductForm();
-  renderProductsView();
-  renderSaleProducts(state.products);
-}
-
-function toggleStockRow() {
-  stockRow.classList.toggle("hidden", !pTrack.checked);
-}
-
-// =====================
-// Events
-// =====================
-goSaleBtn.addEventListener("click", goToSale);
-goSalesBtn.addEventListener("click", goToSales);
-goProductsBtn.addEventListener("click", goToProducts);
-
-saleSearchInput.addEventListener("input", () => {
-  const q = saleSearchInput.value.toLowerCase().trim();
-  const filtered = state.products.filter((p) => p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q));
-  renderSaleProducts(filtered);
-});
-
-clearSaleBtn.addEventListener("click", () => {
-  const ok = confirm("¿Vaciar la venta en curso?");
-  if (!ok) return;
-  clearSale();
-});
-
-paymentMethodSelect.addEventListener("change", updateCashUI);
-cashReceivedInput.addEventListener("input", updateCashChange);
-
-confirmSaleBtn.addEventListener("click", confirmSale);
-newSaleBtn.addEventListener("click", () => {
-  const ok = state.currentSale.items.length === 0 ? true : confirm("Esto limpiará la venta actual. ¿Continuar?");
-  if (!ok) return;
-  startNewSale();
-});
-
-confirmationNewSaleBtn.addEventListener("click", () => {
-  state.ui.lastSaleId = null;
-  goToSale();
-});
-
-confirmationInvoiceBtn.addEventListener("click", () => {
-  const id = state.ui.lastSaleId;
-  if (!id) {
-    goToSales();
-    return;
-  }
-  openInvoice(id, { backTo: "confirmation" });
-});
-
-confirmationHistoryBtn.addEventListener("click", goToSales);
-
-invoiceBackBtn.addEventListener("click", () => {
-  const backTo = invoiceBackBtn.dataset.backto || "sales";
-  if (backTo === "confirmation") {
-    goToConfirmation();
+    existing.qty += 1;
   } else {
-    goToSales();
+    state.currentSale.items.push({
+      productId: p.id, name: p.name, category: p.category,
+      price: p.price, cost: p.cost, qty: 1, trackInventory: p.trackInventory,
+    });
   }
-});
+  const wasOpen = isCartOpen();
+  renderPOS();
+  restoreCartState(wasOpen);
+  const badge = document.getElementById('cart-fab-badge');
+  if (badge) { badge.classList.remove('bounce'); void badge.offsetWidth; badge.classList.add('bounce'); }
+}
+function changeQty(index, delta) {
+  const item = state.currentSale.items[index];
+  if (!item) return;
+  if (delta > 0 && item.trackInventory) {
+    const p = state.products.find(x => x.id === item.productId);
+    if (p && item.qty >= p.stock) {
+      toast('Stock máximo disponible: ' + p.stock + ' unidades', 'error');
+      return;
+    }
+  }
+  item.qty = Math.max(1, item.qty + delta);
+  const wasOpen = isCartOpen();
+  renderPOS();
+  restoreCartState(wasOpen);
+}
+function removeItem(index) {
+  state.currentSale.items.splice(index, 1);
+  const wasOpen = isCartOpen();
+  renderPOS();
+  restoreCartState(wasOpen);
+}
+function clearSale() {
+  if (!state.currentSale.items.length) return;
+  openModal(
+    'Limpiar carrito',
+    `<div class="confirm-icon">🗑️</div>
+     <div class="confirm-msg">¿Eliminar todos los productos del carrito?</div>`,
+    `<button class="btn btn-ghost"  onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-danger" onclick="confirmClear()">Sí, limpiar</button>`
+  );
+}
+function confirmClear() {
+  state.currentSale.items = [];
+  closeModal();
+  const wasOpen = isCartOpen();
+  renderPOS();
+  restoreCartState(wasOpen);
+}
+function discardSale() {
+  openModal(
+    'Descartar venta',
+    `<div class="confirm-icon">⚠️</div>
+     <div class="confirm-msg">¿Descartar esta venta e iniciar una nueva?</div>`,
+    `<button class="btn btn-ghost"  onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-danger" onclick="confirmDiscard()">Descartar</button>`
+  );
+}
+function confirmDiscard() {
+  state.currentSale = null;
+  closeModal();
+  initNewSale();
+  renderPOS();
+}
+function saveSaleOpen() { toast('Venta guardada como abierta', 'info'); }
 
-productSearchInput.addEventListener("input", () => {
-  const q = productSearchInput.value.toLowerCase().trim();
-  const filtered = state.products.filter((p) => p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q));
-  renderProductsList(filtered);
-});
+/* ═══════════════════════════════════════════════════════════
+   COBRO
+═══════════════════════════════════════════════════════════ */
+function openCobro() {
+  const total = calcTotal(state.currentSale.items);
+  openModal('Cobrar venta', `
+    <div class="form-grid" style="gap:16px">
+      <div class="form-group">
+        <label>Total a cobrar</label>
+        <div style="font-family:'DM Serif Display',serif;font-size:1.6rem;color:var(--accent)">${fmt(total)}</div>
+      </div>
+      <div class="form-group">
+        <label>Método de pago</label>
+        <select class="form-control" id="cobro-method" onchange="onMethodChange()">
+          <option value="">— Seleccionar —</option>
+          <option value="efectivo">💵 Efectivo</option>
+          <option value="nequi">📱 Nequi</option>
+          <option value="debe">📒 Debe (Cuenta por cobrar)</option>
+        </select>
+      </div>
+      <div id="efectivo-section" style="display:none" class="form-grid form-grid-2">
+        <div class="form-group">
+          <label>Valor recibido</label>
+          <input type="number" class="form-control" id="cobro-recibido" placeholder="0" oninput="calcCambio()" min="0" step="100"/>
+        </div>
+        <div class="form-group">
+          <label>Cambio</label>
+          <div class="form-control" id="cobro-cambio" style="background:var(--paper);font-weight:600;color:var(--green)">$ 0</div>
+        </div>
+      </div>
+      <div id="debe-section" style="display:none">
+        <div class="form-group">
+          <label>Cliente</label>
+          <input type="text" class="form-control" id="cobro-cliente" placeholder="Nombre del cliente (obligatorio)"/>
+        </div>
+      </div>
+    </div>
+  `, `
+    <button class="btn btn-ghost"          onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary btn-lg" onclick="confirmCobro()">Confirmar pago</button>
+  `);
+}
+function onMethodChange() {
+  const m = document.getElementById('cobro-method').value;
+  document.getElementById('efectivo-section').style.display = m === 'efectivo' ? 'grid'  : 'none';
+  document.getElementById('debe-section').style.display     = m === 'debe'     ? 'block' : 'none';
+}
+function calcCambio() {
+  const total  = calcTotal(state.currentSale.items);
+  const rec    = parseFloat(document.getElementById('cobro-recibido').value) || 0;
+  const cambio = rec - total;
+  const el = document.getElementById('cobro-cambio');
+  el.textContent = fmt(Math.max(0, cambio));
+  el.style.color = cambio < 0 ? '#b91c1c' : 'var(--green)';
+}
+function confirmCobro() {
+  const method = document.getElementById('cobro-method').value;
+  if (!method) { toast('Selecciona un método de pago', 'error'); return; }
+  const total = calcTotal(state.currentSale.items);
+  if (method === 'efectivo') {
+    const rec = parseFloat(document.getElementById('cobro-recibido').value) || 0;
+    if (rec < total) { toast('El valor recibido es menor al total', 'error'); return; }
+    state.currentSale.received = rec;
+    state.currentSale.change   = rec - total;
+  }
+  if (method === 'debe') {
+    const cliente = document.getElementById('cobro-cliente').value.trim();
+    if (!cliente) { toast('Ingresa el nombre del cliente', 'error'); return; }
+    state.currentSale.client = cliente;
+  }
+  state.currentSale.method   = method;
+  state.currentSale.status   = 'closed';
+  state.currentSale.closedAt = new Date().toISOString();
+  state.currentSale.total    = total;
+  state.currentSale.items.forEach(item => {
+    if (item.trackInventory) {
+      const p = state.products.find(x => x.id === item.productId);
+      if (p) p.stock = Math.max(0, (p.stock || 0) - item.qty);
+    }
+  });
+  saveProducts();
+  state.sales.unshift({ ...state.currentSale });
+  saveSales();
+  const ventaCerrada = { ...state.currentSale };
+  state.currentSale = null;
+  closeModal();
+  initNewSale();
+  renderPOS();
+  showVentaConfirmada(ventaCerrada);
+}
+function showVentaConfirmada(sale) {
+  const methodLabel = { efectivo:'Efectivo', nequi:'Nequi', debe:'Debe' }[sale.method] || sale.method;
+  openModal('Venta confirmada', `
+    <div style="text-align:center;padding:8px 0 20px">
+      <div style="font-size:3rem;margin-bottom:8px">✅</div>
+      <div style="font-family:'DM Serif Display',serif;font-size:1.4rem;color:var(--green)">¡Venta cerrada!</div>
+      <div style="font-size:.85rem;color:var(--ink-soft);margin-top:4px">Venta #${sale.num} · ${methodLabel}</div>
+      <div style="font-size:1.8rem;font-weight:700;color:var(--ink);margin:14px 0">${fmt(sale.total)}</div>
+      ${sale.method === 'efectivo' ? `
+        <div style="display:flex;justify-content:center;gap:24px;font-size:.85rem;color:var(--ink-mid)">
+          <span>Recibido: <b>${fmt(sale.received)}</b></span>
+          <span>Cambio: <b style="color:var(--green)">${fmt(sale.change)}</b></span>
+        </div>` : ''}
+      ${sale.method === 'debe' ? `
+        <div style="font-size:.85rem;color:var(--gold)">📒 Cuenta por cobrar a: <b>${sale.client}</b></div>` : ''}
+    </div>
+  `, `
+    <button class="btn btn-ghost"     onclick="closeModal()">🛒 Nueva venta</button>
+    <button class="btn btn-secondary" onclick="closeModal();viewFactura('${sale.id}')">🧾 Ver factura</button>
+    <button class="btn btn-primary"   onclick="closeModal()">Continuar</button>
+  `);
+}
 
-pTrack.addEventListener("change", toggleStockRow);
+/* ═══════════════════════════════════════════════════════════
+   FACTURA
+═══════════════════════════════════════════════════════════ */
+function viewFactura(saleId) {
+  const sale = state.sales.find(s => s.id === saleId);
+  if (!sale) { toast('Venta no encontrada', 'error'); return; }
+  const methodLabel = { efectivo:'Efectivo', nequi:'Nequi', debe:'Debe' }[sale.method] || sale.method;
+  openModal('Factura / Comprobante', `
+    <div class="factura">
+      <div class="factura-logo">Papel <span>&</span> Luna</div>
+      <div class="factura-info">Papelería y Miscelánea · NIT 900.123.456-7<br>Calle 45 #12-34 · Tel. 310 000 0000</div>
+      <hr class="factura-divider"/>
+      <div class="factura-meta">
+        <span><b>Comprobante #</b> ${sale.num}</span>
+        <span><b>Fecha:</b> ${fmtDate(sale.closedAt)}</span>
+        <span><b>Método:</b> ${methodLabel}</span>
+        ${sale.client ? `<span><b>Cliente:</b> ${sale.client}</span>` : ''}
+      </div>
+      <hr class="factura-divider"/>
+      <div class="factura-items-header">
+        <span>Producto</span><span style="text-align:right">Cant.</span>
+        <span style="text-align:right">Precio</span><span style="text-align:right">Subtotal</span>
+      </div>
+      ${sale.items.map(item => `
+        <div class="factura-item-row">
+          <span>${item.name}</span>
+          <span style="text-align:right">${item.qty}</span>
+          <span style="text-align:right">${fmt(item.price)}</span>
+          <span style="text-align:right;font-weight:600">${fmt(item.price * item.qty)}</span>
+        </div>`).join('')}
+      <div class="factura-totals">
+        <div class="row"><span>Subtotal</span><b>${fmt(sale.total)}</b></div>
+        <div class="row grand"><span>TOTAL</span><b>${fmt(sale.total)}</b></div>
+        ${sale.method === 'efectivo' ? `
+          <div class="row"><span>Recibido</span><b>${fmt(sale.received)}</b></div>
+          <div class="row"><span>Cambio</span><b style="color:var(--green)">${fmt(sale.change)}</b></div>` : ''}
+      </div>
+      <div class="factura-footer">¡Gracias por tu compra!<br>Papel & Luna — Tu papelería de confianza</div>
+    </div>
+  `, `<button class="btn btn-primary" onclick="closeModal()">Cerrar</button>`, true);
+}
 
-cancelEditBtn.addEventListener("click", () => {
-  resetProductForm();
-  renderProductsView();
-});
+/* ═══════════════════════════════════════════════════════════
+   HISTORIAL
+═══════════════════════════════════════════════════════════ */
+function renderHistorial() {
+  const f = state.historialFilter;
+  let filtered = [...state.sales];
+  if (f.date)   filtered = filtered.filter(s => s.closedAt && s.closedAt.startsWith(f.date));
+  if (f.method) filtered = filtered.filter(s => s.method === f.method);
+  if (f.q)      filtered = filtered.filter(s =>
+    s.num.includes(f.q) || (s.client || '').toLowerCase().includes(f.q.toLowerCase())
+  );
+  const mc = { efectivo:'badge-green', nequi:'badge-blue', debe:'badge-gold' };
+  const ml = { efectivo:'💵 Efectivo', nequi:'📱 Nequi', debe:'📒 Debe' };
 
-resetProductBtn.addEventListener("click", resetProductForm);
+  document.getElementById('view-historial').innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title">Historial de Ventas</div>
+        <div class="page-subtitle">${state.sales.length} ventas registradas</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap;gap:10px">
+        <span class="card-title">Ventas cerradas</span>
+        <div class="filters-row">
+          <input type="text" class="form-control" style="max-width:160px" placeholder="Buscar #, cliente…"
+            value="${f.q}" oninput="setHistFilter('q', this.value)"/>
+          <input type="date" class="form-control" style="max-width:160px"
+            value="${f.date}" onchange="setHistFilter('date', this.value)"/>
+          <select class="form-control" style="max-width:150px" onchange="setHistFilter('method', this.value)">
+            <option value="">Todos los métodos</option>
+            <option value="efectivo" ${f.method==='efectivo'?'selected':''}>Efectivo</option>
+            <option value="nequi"    ${f.method==='nequi'   ?'selected':''}>Nequi</option>
+            <option value="debe"     ${f.method==='debe'    ?'selected':''}>Debe</option>
+          </select>
+          ${f.date||f.method||f.q ? `<button class="btn btn-ghost btn-sm" onclick="clearHistFilter()">✕ Limpiar</button>` : ''}
+        </div>
+      </div>
+      <div class="table-wrap">
+        ${filtered.length === 0 ? `
+          <div class="empty-state">
+            <div class="big-icon">📋</div>
+            <h3>Sin ventas</h3>
+            <p>${state.sales.length === 0 ? 'Aún no se han registrado ventas.' : 'No hay resultados con ese filtro.'}</p>
+          </div>` : `
+          <table>
+            <thead><tr>
+              <th>#</th><th>Fecha</th><th>Ítems</th><th>Método</th><th>Cliente</th>
+              <th style="text-align:right">Total</th><th style="text-align:right">Acciones</th>
+            </tr></thead>
+            <tbody>
+              ${filtered.map(s => `
+                <tr>
+                  <td><b>${s.num}</b></td>
+                  <td style="white-space:nowrap">${fmtDate(s.closedAt)}</td>
+                  <td>${s.items.length} ítem${s.items.length!==1?'s':''}</td>
+                  <td><span class="badge ${mc[s.method]||'badge-gray'}">${ml[s.method]||s.method}</span></td>
+                  <td>${s.client||'—'}</td>
+                  <td style="text-align:right;font-weight:700">${fmt(s.total)}</td>
+                  <td><div class="td-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="viewSaleDetail('${s.id}')">Ver</button>
+                    <button class="btn btn-ghost btn-sm"     onclick="viewFactura('${s.id}')">🧾</button>
+                  </div></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`}
+      </div>
+    </div>
+  `;
+}
+function setHistFilter(key, val) { state.historialFilter[key] = val; renderHistorial(); }
+function clearHistFilter() { state.historialFilter = { date:'', method:'', q:'' }; renderHistorial(); }
 
-productForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-  upsertProductFromForm();
-});
+function viewSaleDetail(saleId) {
+  const sale = state.sales.find(s => s.id === saleId);
+  if (!sale) return;
+  const ml = { efectivo:'💵 Efectivo', nequi:'📱 Nequi', debe:'📒 Debe' }[sale.method] || sale.method;
+  openModal('Detalle de venta #' + sale.num, `
+    <div class="form-grid" style="gap:14px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div><div style="font-size:.72rem;color:var(--ink-soft);font-weight:600;text-transform:uppercase;letter-spacing:.06em">Venta</div><div style="font-weight:700">#${sale.num}</div></div>
+        <div><div style="font-size:.72rem;color:var(--ink-soft);font-weight:600;text-transform:uppercase;letter-spacing:.06em">Fecha</div><div>${fmtDate(sale.closedAt)}</div></div>
+        <div><div style="font-size:.72rem;color:var(--ink-soft);font-weight:600;text-transform:uppercase;letter-spacing:.06em">Pago</div><div>${ml}</div></div>
+        ${sale.client ? `<div><div style="font-size:.72rem;color:var(--ink-soft);font-weight:600;text-transform:uppercase;letter-spacing:.06em">Cliente</div><div>${sale.client}</div></div>` : ''}
+      </div>
+      <hr class="divider"/>
+      <div>
+        ${sale.items.map(item => `
+          <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--sand);font-size:.85rem">
+            <div><b>${item.name}</b> <span style="color:var(--ink-soft)">× ${item.qty}</span></div>
+            <div style="font-weight:600">${fmt(item.price * item.qty)}</div>
+          </div>`).join('')}
+        <div style="display:flex;justify-content:space-between;padding:10px 0 0;font-size:1rem;font-weight:700">
+          <span>TOTAL</span><span>${fmt(sale.total)}</span>
+        </div>
+        ${sale.method === 'efectivo' ? `
+          <div style="display:flex;gap:20px;font-size:.82rem;color:var(--ink-soft);margin-top:6px">
+            <span>Recibido: <b>${fmt(sale.received)}</b></span>
+            <span>Cambio: <b style="color:var(--green)">${fmt(sale.change)}</b></span>
+          </div>` : ''}
+      </div>
+    </div>
+  `, `
+    <button class="btn btn-ghost"     onclick="closeModal()">Cerrar</button>
+    <button class="btn btn-secondary" onclick="closeModal();viewFactura('${sale.id}')">🧾 Ver factura</button>
+  `, true);
+}
 
-// =====================
-// Init
-// =====================
+/* ═══════════════════════════════════════════════════════════
+   PRODUCTOS — CRUD
+═══════════════════════════════════════════════════════════ */
+function renderProductos() {
+  const q = state.searchQuery;
+  let list = state.products;
+  if (q) list = list.filter(p =>
+    p.name.toLowerCase().includes(q.toLowerCase()) ||
+    p.category.toLowerCase().includes(q.toLowerCase()) ||
+    p.code.toLowerCase().includes(q.toLowerCase())
+  );
+
+  document.getElementById('view-productos').innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="page-title">Productos</div>
+        <div class="page-subtitle">Catálogo e inventario</div>
+      </div>
+      <button class="btn btn-primary" onclick="openProductForm()">+ Nuevo producto</button>
+    </div>
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Total productos</div>
+        <div class="stat-value">${state.products.length}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Con inventario</div>
+        <div class="stat-value">${state.products.filter(p=>p.trackInventory).length}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Sin stock</div>
+        <div class="stat-value" style="color:${state.products.filter(p=>p.trackInventory&&p.stock<=0).length>0?'#b91c1c':'var(--green)'}">
+          ${state.products.filter(p=>p.trackInventory&&p.stock<=0).length}
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Listado</span>
+        <div class="search-bar">
+          <span class="search-icon">🔍</span>
+          <input type="text" class="form-control" placeholder="Buscar por nombre, categoría…"
+            value="${state.searchQuery}"
+            oninput="state.searchQuery=this.value; renderProductos()"/>
+        </div>
+      </div>
+      <div class="table-wrap">
+        ${list.length === 0 ? `
+          <div class="empty-state">
+            <div class="big-icon">📦</div>
+            <h3>Sin productos</h3>
+            <p>${state.products.length===0?'Crea tu primer producto.':'No hay resultados.'}</p>
+          </div>` : `
+          <table>
+            <thead><tr>
+              <th>Nombre</th><th>Categoría</th><th>Código</th>
+              <th style="text-align:right">Costo</th><th style="text-align:right">Precio</th>
+              <th style="text-align:center">Stock</th><th style="text-align:right">Acciones</th>
+            </tr></thead>
+            <tbody>
+              ${list.map(p => `
+                <tr>
+                  <td><b>${p.name}</b></td>
+                  <td><span class="badge badge-gray">${p.category}</span></td>
+                  <td style="font-family:monospace;font-size:.8rem;color:var(--ink-soft)">${p.code}</td>
+                  <td style="text-align:right;color:var(--ink-soft)">${fmt(p.cost)}</td>
+                  <td style="text-align:right;font-weight:600;color:var(--accent)">${fmt(p.price)}</td>
+                  <td style="text-align:center">
+                    ${p.trackInventory
+                      ? `<span class="badge ${p.stock>5?'badge-green':p.stock>0?'badge-gold':'badge-red'}">${p.stock}</span>`
+                      : '<span class="badge badge-gray">—</span>'}
+                  </td>
+                  <td><div class="td-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="openProductForm('${p.id}')">Editar</button>
+                    <button class="btn btn-danger btn-sm"    onclick="confirmDeleteProduct('${p.id}')">Eliminar</button>
+                  </div></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`}
+      </div>
+    </div>
+  `;
+}
+
+function genProductCode() { return 'PRD-' + String(state.products.length + 1).padStart(3, '0'); }
+
+function openProductForm(productId) {
+  const isEdit = !!productId;
+  const p = isEdit ? state.products.find(x => x.id === productId) : null;
+  openModal(isEdit ? 'Editar producto' : 'Nuevo producto', `
+    <div class="form-grid">
+      <div class="form-grid form-grid-2">
+        <div class="form-group" id="fg-name">
+          <label>Nombre <span style="color:var(--accent)">*</span></label>
+          <input type="text" class="form-control" id="p-name" value="${p?p.name:''}" placeholder="Ej. Cuaderno universitario"/>
+          <div class="form-error">Campo obligatorio</div>
+        </div>
+        <div class="form-group" id="fg-category">
+          <label>Categoría <span style="color:var(--accent)">*</span></label>
+          <input type="text" class="form-control" id="p-category" value="${p?p.category:''}" placeholder="Ej. Cuadernos"/>
+          <div class="form-error">Campo obligatorio</div>
+        </div>
+      </div>
+      <div class="form-grid form-grid-2">
+        <div class="form-group" id="fg-price">
+          <label>Precio de venta <span style="color:var(--accent)">*</span></label>
+          <input type="number" class="form-control" id="p-price" value="${p?p.price:''}" placeholder="0" min="0" step="50"/>
+          <div class="form-error">Ingresa un valor válido (≥ 0)</div>
+        </div>
+        <div class="form-group" id="fg-cost">
+          <label>Costo de compra</label>
+          <input type="number" class="form-control" id="p-cost" value="${p?p.cost:''}" placeholder="0" min="0" step="50"/>
+          <div class="form-error">Ingresa un valor válido (≥ 0)</div>
+        </div>
+      </div>
+      <div class="form-grid form-grid-2">
+        <div class="form-group">
+          <label>Código interno</label>
+          <input type="text" class="form-control" id="p-code" value="${p?p.code:genProductCode()}" placeholder="Ej. CU-001"/>
+          <div class="form-hint">Sugerido automáticamente. Puedes editarlo.</div>
+        </div>
+        <div class="form-group">
+          <label>Código de barras</label>
+          <input type="text" class="form-control" id="p-barcode" value="${p?p.barcode:''}" placeholder="Opcional"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Seguimiento de inventario</div>
+            <div class="form-hint">Activar para controlar stock</div>
+          </div>
+          <input type="checkbox" class="toggle" id="p-track" ${p&&p.trackInventory?'checked':''}
+            onchange="document.getElementById('stock-row').style.display=this.checked?'grid':'none'"/>
+        </div>
+      </div>
+      <div class="form-grid form-grid-2" id="stock-row" style="display:${!p||p.trackInventory?'grid':'none'}">
+        <div class="form-group" id="fg-stock">
+          <label>Stock actual</label>
+          <input type="number" class="form-control" id="p-stock" value="${p?p.stock:0}" min="0"/>
+          <div class="form-error">Ingresa un valor válido (≥ 0)</div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Imagen del producto</label>
+        <div class="img-upload-area" id="img-upload-area" onclick="document.getElementById('p-image-file').click()">
+          ${p&&p.image
+            ? `<img id="img-preview" src="${p.image}" alt="preview"/>`
+            : `<div id="img-upload-placeholder">
+                <div class="img-upload-icon">📷</div>
+                <div class="img-upload-text">Haz clic para subir una imagen</div>
+                <div class="img-upload-hint">JPG, PNG, WEBP — máx. 2 MB</div>
+               </div>`}
+        </div>
+        <input type="file" id="p-image-file" accept="image/*" style="display:none"
+          onchange="previewProductImage(this)"/>
+        ${p&&p.image ? `<button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px;width:fit-content" onclick="removeProductImage()">✕ Quitar imagen</button>` : ''}
+      </div>
+    </div>
+  `, `
+    <button class="btn btn-ghost"   onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveProduct(${isEdit?`'${productId}'`:'null'})">
+      ${isEdit ? 'Guardar cambios' : 'Crear producto'}
+    </button>
+  `, true);
+}
+
+function saveProduct(productId) {
+  let valid = true;
+  const nameEl  = document.getElementById('p-name');
+  const catEl   = document.getElementById('p-category');
+  const priceEl = document.getElementById('p-price');
+  const costEl  = document.getElementById('p-cost');
+  const stockEl = document.getElementById('p-stock');
+  const trackEl = document.getElementById('p-track');
+  const clearErr = id => document.getElementById(id).classList.remove('has-error');
+  const setErr   = id => { document.getElementById(id).classList.add('has-error'); valid = false; };
+  clearErr('fg-name'); clearErr('fg-price'); clearErr('fg-cost'); clearErr('fg-stock');
+  if (!nameEl.value.trim()) setErr('fg-name');
+  if (priceEl.value===''||isNaN(priceEl.value)||parseFloat(priceEl.value)<0) setErr('fg-price');
+  if (costEl.value!==''&&(isNaN(costEl.value)||parseFloat(costEl.value)<0))  setErr('fg-cost');
+  if (trackEl.checked&&(stockEl.value===''||isNaN(stockEl.value)||parseInt(stockEl.value)<0)) setErr('fg-stock');
+  if (!valid) { toast('Revisa los campos con error', 'error'); return; }
+  const imgPreview = document.getElementById('img-preview');
+  const imageData = imgPreview ? imgPreview.src : (window._productImageRemoved ? '' : (state.products.find(x=>x.id===productId)||{}).image || '');
+  window._productImageRemoved = false;
+  const data = {
+    name: nameEl.value.trim(), category: catEl.value.trim()||'General',
+    price: parseFloat(priceEl.value), cost: costEl.value!==''?parseFloat(costEl.value):0,
+    code: document.getElementById('p-code').value.trim()||genProductCode(),
+    barcode: document.getElementById('p-barcode').value.trim(),
+    trackInventory: trackEl.checked,
+    stock: trackEl.checked ? parseInt(stockEl.value)||0 : 0,
+    unit: 'unidad',
+    image: imageData || '',
+  };
+  if (productId) {
+    const idx = state.products.findIndex(p => p.id === productId);
+    state.products[idx] = { ...state.products[idx], ...data };
+    toast('Producto actualizado ✔');
+  } else {
+    state.products.push({ id: genId('PRD'), ...data });
+    toast('Producto creado ✔');
+  }
+  saveProducts();
+  closeModal();
+  renderProductos();
+}
+
+function confirmDeleteProduct(productId) {
+  const p = state.products.find(x => x.id === productId);
+  if (!p) return;
+  openModal('Eliminar producto', `
+    <div class="confirm-icon">⚠️</div>
+    <div class="confirm-msg">¿Eliminar "<b>${p.name}</b>"?</div>
+    <div class="confirm-sub">Esta acción no se puede deshacer.</div>
+  `, `
+    <button class="btn btn-ghost"  onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-danger" onclick="deleteProduct('${productId}')">Eliminar</button>
+  `);
+}
+function deleteProduct(productId) {
+  state.products = state.products.filter(p => p.id !== productId);
+  saveProducts();
+  closeModal();
+  toast('Producto eliminado', 'info');
+  renderProductos();
+}
+
+
+/* ─── Imagen de producto ─────────────────────────────────── */
+function previewProductImage(input) {
+  if (!input.files || !input.files[0]) return;
+  const file = input.files[0];
+  if (file.size > 2 * 1024 * 1024) { toast('La imagen supera 2 MB', 'error'); return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    const area = document.getElementById('img-upload-area');
+    area.innerHTML = `<img id="img-preview" src="${e.target.result}" alt="preview"/>`;
+    // Show remove button
+    const existing = area.nextElementSibling?.nextElementSibling;
+    if (!existing || existing.tagName !== 'BUTTON') {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-ghost btn-sm';
+      btn.style = 'margin-top:6px;width:fit-content';
+      btn.textContent = '✕ Quitar imagen';
+      btn.onclick = removeProductImage;
+      area.parentNode.insertBefore(btn, area.nextSibling.nextSibling);
+    }
+  };
+  reader.readAsDataURL(file);
+}
+function removeProductImage() {
+  window._productImageRemoved = true;
+  const area = document.getElementById('img-upload-area');
+  area.innerHTML = `<div id="img-upload-placeholder">
+    <div class="img-upload-icon">📷</div>
+    <div class="img-upload-text">Haz clic para subir una imagen</div>
+    <div class="img-upload-hint">JPG, PNG, WEBP — máx. 2 MB</div>
+  </div>`;
+  // Remove button
+  const btn = area.parentNode.querySelector('button');
+  if (btn) btn.remove();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ARRANQUE — solo carga datos, no entra a la app todavía
+═══════════════════════════════════════════════════════════ */
 loadData();
-resetPayment();
-renderSale();
-goToSale();
