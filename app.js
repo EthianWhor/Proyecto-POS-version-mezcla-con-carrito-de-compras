@@ -109,12 +109,28 @@ function buildId(prefix) {
   return `${prefix}-${Date.now()}-${random}`;
 }
 
+// ── Loader global ──────────────────────────────────────────
+let _loadingCount = 0;
+
+function showLoader() {
+  _loadingCount++;
+  document.getElementById("globalLoader").removeAttribute("hidden");
+}
+
+function hideLoader() {
+  _loadingCount = Math.max(0, _loadingCount - 1);
+  if (_loadingCount === 0) {
+    document.getElementById("globalLoader").setAttribute("hidden", "");
+  }
+}
+
+// ── Page status ─────────────────────────────────────────────
 function showPageStatus(text, type = "info") {
   const statusEl = document.querySelector("#pageStatus");
   statusEl.textContent = text;
   statusEl.classList.remove("hidden");
-  statusEl.style.background = type === "error" ? "#fff1f2" : type === "success" ? "#ecfdf5" : "#eef4ff";
-  statusEl.style.borderColor = type === "error" ? "#fecdd3" : type === "success" ? "#bbf7d0" : "#dbe7ff";
+  statusEl.style.background = "";
+  statusEl.style.borderColor = "";
 }
 
 function hidePageStatus() {
@@ -123,26 +139,37 @@ function hidePageStatus() {
   statusEl.classList.add("hidden");
 }
 
+// ── API helpers con loader integrado ────────────────────────
 async function apiGet(resource) {
-  const response = await fetch(`${API_URL}?resource=${resource}`);
-  const result = await response.json();
-  if (!result.success) {
-    throw new Error(result.message || `No fue posible cargar ${resource}`);
+  showLoader();
+  try {
+    const response = await fetch(`${API_URL}?resource=${resource}`);
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.message || `No fue posible cargar ${resource}`);
+    }
+    return result.data || [];
+  } finally {
+    hideLoader();
   }
-  return result.data || [];
 }
 
 async function apiPost(resource, payload) {
-  const response = await fetch(`${API_URL}?resource=${resource}`, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(payload),
-  });
-  const result = await response.json();
-  if (!result.success) {
-    throw new Error(result.message || `No fue posible guardar en ${resource}`);
+  showLoader();
+  try {
+    const response = await fetch(`${API_URL}?resource=${resource}`, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.message || `No fue posible guardar en ${resource}`);
+    }
+    return result;
+  } finally {
+    hideLoader();
   }
-  return result;
 }
 
 function normalizeCategory(raw) {
@@ -268,8 +295,19 @@ function getPurchaseTotal() {
 function setMessage(element, text, type = "info") {
   element.textContent = text;
   element.classList.remove("hidden");
-  element.style.background = type === "error" ? "#fff1f2" : type === "success" ? "#ecfdf5" : "#eef4ff";
-  element.style.borderColor = type === "error" ? "#fecdd3" : type === "success" ? "#bbf7d0" : "#dbe7ff";
+  if (type === "error") {
+    element.style.background = "rgba(255,80,80,0.12)";
+    element.style.borderColor = "rgba(255,80,80,0.35)";
+    element.style.color = "#fca5a5";
+  } else if (type === "success") {
+    element.style.background = "rgba(52,211,153,0.12)";
+    element.style.borderColor = "rgba(52,211,153,0.35)";
+    element.style.color = "#6ee7b7";
+  } else {
+    element.style.background = "rgba(95,141,255,0.10)";
+    element.style.borderColor = "rgba(95,141,255,0.30)";
+    element.style.color = "#93a4c7";
+  }
 }
 
 function clearMessage(element) {
